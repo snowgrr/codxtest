@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TIN Maker</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main class="app-shell">
+    <aside class="sidebar">
+      <header class="brand">
+        <div>
+          <h1>TIN Maker</h1>
+          <p>CCTV 이미지와 지도 좌표 매핑을 위한 포인트 편집 도구</p>
+        </div>
+        <button id="clearBtn" class="icon-btn danger" title="전체 초기화" aria-label="전체 초기화">
+          <span aria-hidden="true">×</span>
+        </button>
+      </header>
+
+      <section class="panel">
+        <h2>배경</h2>
+        <label class="file-drop">
+          <input id="imageInput" type="file" accept="image/*">
+          <span>이미지 불러오기</span>
+        </label>
+        <div class="toggle-row">
+          <label><input id="showImage" type="checkbox" checked> 이미지</label>
+          <label><input id="showGrid" type="checkbox" checked> 격자</label>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>TIN 제어</h2>
+        <label class="range-row">
+          <span>최대 변 길이</span>
+          <output id="edgeValue">420 px</output>
+          <input id="edgeLimit" type="range" min="80" max="1200" value="420" step="10">
+        </label>
+        <label class="range-row">
+          <span>최소 내각</span>
+          <output id="angleValue">12°</output>
+          <input id="angleLimit" type="range" min="1" max="45" value="12" step="1">
+        </label>
+        <label class="range-row">
+          <span>제외 TIN 투명도</span>
+          <output id="longEdgeValue">45%</output>
+          <input id="longEdgeOpacity" type="range" min="0" max="100" value="45" step="5">
+        </label>
+        <div class="toggle-row">
+          <label><input id="hideLongTin" type="checkbox" checked> 제외 TIN 숨김</label>
+          <label><input id="showLabels" type="checkbox" checked> 번호</label>
+        </div>
+      </section>
+
+      <section class="panel selected-panel">
+        <h2>선택 포인트</h2>
+        <div id="emptySelection" class="muted">포인트를 선택하면 좌표를 편집할 수 있습니다.</div>
+        <div id="pointEditor" class="point-editor hidden">
+          <label>X <input id="pointX" type="number" step="0.1"></label>
+          <label>Y <input id="pointY" type="number" step="0.1"></label>
+          <label>지도 X <input id="mapX" type="text" placeholder="선택 입력"></label>
+          <label>지도 Y <input id="mapY" type="text" placeholder="선택 입력"></label>
+          <button id="deletePointBtn" class="full danger">선택 포인트 삭제</button>
+        </div>
+      </section>
+
+      <section class="panel stats">
+        <h2>상태</h2>
+        <dl>
+          <div><dt>포인트</dt><dd id="pointCount">0</dd></div>
+          <div><dt>TIN</dt><dd id="tinCount">0</dd></div>
+          <div><dt>긴 변 제외</dt><dd id="filteredCount">0</dd></div>
+          <div><dt>낮은 예각 제외</dt><dd id="angleFilteredCount">0</dd></div>
+        </dl>
+      </section>
+
+      <section class="panel actions">
+        <h2>데이터</h2>
+        <button id="exportBtn" class="full">JSON 내보내기</button>
+        <label class="file-import">
+          <input id="jsonInput" type="file" accept="application/json,.json">
+          <span>JSON 불러오기</span>
+        </label>
+      </section>
+    </aside>
+
+    <section class="workspace">
+      <div class="toolbar">
+        <button id="addModeBtn" class="mode active" data-mode="add" title="포인트 추가">＋</button>
+        <button id="selectModeBtn" class="mode" data-mode="select" title="선택/이동">↕</button>
+        <button id="fitBtn" class="mode" title="화면 맞춤">⌂</button>
+        <div class="hint">클릭으로 추가 · 드래그로 이동 · Delete로 삭제</div>
+      </div>
+      <canvas id="tinCanvas" width="1600" height="1000" aria-label="TIN 편집 캔버스"></canvas>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
