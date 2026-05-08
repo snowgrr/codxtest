@@ -12,7 +12,7 @@
       <header class="brand">
         <div>
           <h1>TIN Maker</h1>
-          <p>CCTV 이미지와 지도 좌표 매핑을 위한 포인트 편집 도구</p>
+          <p>CCTV 이미지와 지도 좌표를 같은 TIN 포인트로 매칭합니다.</p>
         </div>
         <button id="clearBtn" class="icon-btn danger" title="전체 초기화" aria-label="전체 초기화">
           <span aria-hidden="true">×</span>
@@ -22,12 +22,17 @@
       <section class="panel">
         <h2>배경</h2>
         <label class="file-drop">
-          <input id="imageInput" type="file" accept="image/*">
-          <span>이미지 불러오기</span>
+          <input id="mapImageInput" type="file" accept="image/*">
+          <span>지도 이미지 불러오기</span>
+        </label>
+        <label class="file-drop">
+          <input id="cctvImageInput" type="file" accept="image/*">
+          <span>CCTV 이미지 불러오기</span>
         </label>
         <div class="toggle-row">
           <label><input id="showImage" type="checkbox" checked> 이미지</label>
           <label><input id="showGrid" type="checkbox" checked> 격자</label>
+          <label><input id="showLabels" type="checkbox" checked> 번호</label>
         </div>
       </section>
 
@@ -44,24 +49,23 @@
           <input id="angleLimit" type="range" min="1" max="45" value="12" step="1">
         </label>
         <label class="range-row">
-          <span>제외 TIN 투명도</span>
-          <output id="longEdgeValue">45%</output>
-          <input id="longEdgeOpacity" type="range" min="0" max="100" value="45" step="5">
+          <span>경고/제외 투명도</span>
+          <output id="warningOpacityValue">45%</output>
+          <input id="warningOpacity" type="range" min="0" max="100" value="45" step="5">
         </label>
         <div class="toggle-row">
-          <label><input id="hideLongTin" type="checkbox" checked> 외곽 제외 TIN 숨김</label>
-          <label><input id="showLabels" type="checkbox" checked> 번호</label>
+          <label><input id="hideExcludedTin" type="checkbox" checked> 외곽 제외 숨김</label>
         </div>
       </section>
 
       <section class="panel selected-panel">
         <h2>선택 포인트</h2>
-        <div id="emptySelection" class="muted">포인트를 선택하면 좌표를 편집할 수 있습니다.</div>
+        <div id="emptySelection" class="muted">오른쪽 CCTV에 포인트를 찍은 뒤 왼쪽 지도에 대응 포인트를 찍으세요.</div>
         <div id="pointEditor" class="point-editor hidden">
-          <label>X <input id="pointX" type="number" step="0.1"></label>
-          <label>Y <input id="pointY" type="number" step="0.1"></label>
-          <label>지도 X <input id="mapX" type="text" placeholder="선택 입력"></label>
-          <label>지도 Y <input id="mapY" type="text" placeholder="선택 입력"></label>
+          <label>CCTV X <input id="cctvX" type="number" step="0.1"></label>
+          <label>CCTV Y <input id="cctvY" type="number" step="0.1"></label>
+          <label>지도 X <input id="mapX" type="number" step="0.1" placeholder="지도에서 클릭"></label>
+          <label>지도 Y <input id="mapY" type="number" step="0.1" placeholder="지도에서 클릭"></label>
           <button id="deletePointBtn" class="full danger">선택 포인트 삭제</button>
         </div>
       </section>
@@ -69,16 +73,17 @@
       <section class="panel stats">
         <h2>상태</h2>
         <dl>
-          <div><dt>포인트</dt><dd id="pointCount">0</dd></div>
-          <div><dt>TIN</dt><dd id="tinCount">0</dd></div>
-          <div><dt>외곽 제외</dt><dd id="filteredCount">0</dd></div>
-          <div><dt>내부 경고</dt><dd id="angleFilteredCount">0</dd></div>
+          <div><dt>전체 포인트</dt><dd id="pointCount">0</dd></div>
+          <div><dt>지도 매칭</dt><dd id="matchedCount">0</dd></div>
+          <div><dt>유효 TIN</dt><dd id="tinCount">0</dd></div>
+          <div><dt>외곽 제외</dt><dd id="excludedCount">0</dd></div>
+          <div><dt>내부 경고</dt><dd id="warningCount">0</dd></div>
         </dl>
       </section>
 
       <section class="panel advice">
         <h2>개선 권장</h2>
-        <div id="qualityAdvice" class="muted">내부 품질 경고가 있으면 후보 포인트가 표시됩니다.</div>
+        <div id="qualityAdvice" class="muted">CCTV 포인트 3개 이상부터 TIN 품질을 평가합니다.</div>
       </section>
 
       <section class="panel actions">
@@ -93,16 +98,25 @@
 
     <section class="workspace">
       <div class="toolbar">
-        <button id="addModeBtn" class="mode active" data-mode="add" title="포인트 추가">＋</button>
+        <button id="addModeBtn" class="mode active" data-mode="add" title="CCTV 포인트 추가">＋</button>
         <button id="selectModeBtn" class="mode" data-mode="select" title="선택/이동">↕</button>
-        <button id="fitBtn" class="mode" title="화면 맞춤">⌂</button>
-        <div class="hint">클릭으로 추가 · 드래그로 이동 · Delete로 삭제</div>
+        <button id="fitBtn" class="mode" title="양쪽 화면 맞춤">⌂</button>
+        <div class="hint">오른쪽: CCTV 포인트/TIN · 왼쪽: 선택 포인트의 지도 위치 매칭</div>
       </div>
-      <canvas id="tinCanvas" width="1600" height="1000" aria-label="TIN 편집 캔버스"></canvas>
+
+      <section class="split-view">
+        <div class="pane map-pane">
+          <div class="pane-title">지도</div>
+          <canvas id="mapCanvas" width="900" height="900" aria-label="지도 포인트 매칭 캔버스"></canvas>
+        </div>
+        <div class="pane cctv-pane">
+          <div class="pane-title">CCTV 이미지</div>
+          <canvas id="cctvCanvas" width="900" height="900" aria-label="CCTV TIN 편집 캔버스"></canvas>
+        </div>
+      </section>
     </section>
   </main>
 
   <script src="app.js"></script>
-  <script src="quality.js"></script>
 </body>
 </html>
