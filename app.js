@@ -1,27 +1,37 @@
-const canvas = document.querySelector("#tinCanvas");
-const ctx = canvas.getContext("2d");
+const canvases = {
+  map: document.querySelector("#mapCanvas"),
+  cctv: document.querySelector("#cctvCanvas")
+};
+
+const contexts = {
+  map: canvases.map.getContext("2d"),
+  cctv: canvases.cctv.getContext("2d")
+};
 
 const ui = {
-  imageInput: document.querySelector("#imageInput"),
+  mapImageInput: document.querySelector("#mapImageInput"),
+  cctvImageInput: document.querySelector("#cctvImageInput"),
   jsonInput: document.querySelector("#jsonInput"),
   showImage: document.querySelector("#showImage"),
   showGrid: document.querySelector("#showGrid"),
   showLabels: document.querySelector("#showLabels"),
-  hideLongTin: document.querySelector("#hideLongTin"),
+  hideExcludedTin: document.querySelector("#hideExcludedTin"),
   edgeLimit: document.querySelector("#edgeLimit"),
   edgeValue: document.querySelector("#edgeValue"),
   angleLimit: document.querySelector("#angleLimit"),
   angleValue: document.querySelector("#angleValue"),
-  longEdgeOpacity: document.querySelector("#longEdgeOpacity"),
-  longEdgeValue: document.querySelector("#longEdgeValue"),
+  warningOpacity: document.querySelector("#warningOpacity"),
+  warningOpacityValue: document.querySelector("#warningOpacityValue"),
   pointCount: document.querySelector("#pointCount"),
+  matchedCount: document.querySelector("#matchedCount"),
   tinCount: document.querySelector("#tinCount"),
-  filteredCount: document.querySelector("#filteredCount"),
-  angleFilteredCount: document.querySelector("#angleFilteredCount"),
+  excludedCount: document.querySelector("#excludedCount"),
+  warningCount: document.querySelector("#warningCount"),
+  qualityAdvice: document.querySelector("#qualityAdvice"),
   emptySelection: document.querySelector("#emptySelection"),
   pointEditor: document.querySelector("#pointEditor"),
-  pointX: document.querySelector("#pointX"),
-  pointY: document.querySelector("#pointY"),
+  cctvX: document.querySelector("#cctvX"),
+  cctvY: document.querySelector("#cctvY"),
   mapX: document.querySelector("#mapX"),
   mapY: document.querySelector("#mapY"),
   deletePointBtn: document.querySelector("#deletePointBtn"),
@@ -36,49 +46,44 @@ const state = {
   triangles: [],
   selectedId: null,
   mode: "add",
-  dragging: false,
-  dragOffset: { x: 0, y: 0 },
+  dragging: null,
   nextId: 1,
-  image: null,
-  imageSrc: null,
-  view: { scale: 1, x: 0, y: 0 },
-  pointerDownAt: null
+  images: {
+    map: null,
+    cctv: null
+  },
+  imageSrc: {
+    map: null,
+    cctv: null
+  },
+  views: {
+    map: { scale: 1, x: 0, y: 0 },
+    cctv: { scale: 1, x: 0, y: 0 }
+  }
 };
 
 const pointRadius = 7;
 
-function resizeCanvas() {
-  const rect = canvas.getBoundingClientRect();
-  const ratio = window.devicePixelRatio || 1;
-  canvas.width = Math.max(1, Math.round(rect.width * ratio));
-  canvas.height = Math.max(1, Math.round(rect.height * ratio));
-  ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
-  render();
+function pointCoord(point, space) {
+  if (space === "cctv") return { x: point.x, y: point.y };
+  if (!hasMapCoord(point)) return null;
+  return { x: point.mapX, y: point.mapY };
 }
 
-function screenToWorld(clientX, clientY) {
-  const rect = canvas.getBoundingClientRect();
-  return {
-    x: (clientX - rect.left - state.view.x) / state.view.scale,
-    y: (clientY - rect.top - state.view.y) / state.view.scale
-  };
+function hasMapCoord(point) {
+  return Number.isFinite(point.mapX) && Number.isFinite(point.mapY);
 }
 
-function worldToScreen(point) {
-  return {
-    x: point.x * state.view.scale + state.view.x,
-    y: point.y * state.view.scale + state.view.y
-  };
-}
-
-function setMode(mode) {
-  state.mode = mode;
-  ui.modeButtons.forEach((button) => button.classList.toggle("active", button.dataset.mode === mode));
-  canvas.style.cursor = mode === "add" ? "crosshair" : "default";
+function selectedPoint() {
+  return state.points.find((point) => point.id === state.selectedId) || null;
 }
 
 function distance(a, b) {
   return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
+function edgeKeyFromIds(a, b) {
+  return [a, b].sort((left, right) => left - right).join("-");
 }
 
 function angleFromSides(adjacentA, adjacentB, opposite) {
@@ -88,8 +93,8 @@ function angleFromSides(adjacentA, adjacentB, opposite) {
   return Math.acos(cosine) * 180 / Math.PI;
 }
 
-function triangleQuality(triangle) {
-  const [a, b, c] = triangle.vertices;
+function triangleQuality(vertices) {
+  const [a, b, c] = vertices;
   const ab = distance(a, b);
   const bc = distance(b, c);
   const ca = distance(c, a);
@@ -98,62 +103,26 @@ function triangleQuality(triangle) {
     angleFromSides(ab, bc, ca),
     angleFromSides(ca, bc, ab)
   ];
+  const minAngle = Math.min(...angles);
   return {
-    lengths: [ab, bc, ca],
     maxEdge: Math.max(ab, bc, ca),
-    minAngle: Math.min(...angles)
+    minAngle,
+    minAngleVertexIndex: angles.indexOf(minAngle)
   };
 }
 
 function tinStatus(triangle) {
-  const maxEdgeLimit = Number(ui.edgeLimit.value);
-  const minAngleLimit = Number(ui.angleLimit.value);
-  const tooLong = triangle.maxEdge > maxEdgeLimit;
-  const tooSharp = triangle.minAngle < minAngleLimit;
+  const tooLong = triangle.maxEdge > Number(ui.edgeLimit.value);
+  const tooSharp = triangle.minAngle < Number(ui.angleLimit.value);
+  const excluded = triangle.isBoundary && (tooLong || tooSharp);
   return {
+    included: !excluded,
     valid: !tooLong && !tooSharp,
+    warning: !excluded && (tooLong || tooSharp),
+    excluded,
     tooLong,
     tooSharp
   };
-}
-
-function findPointAt(world) {
-  const hitRadius = pointRadius / state.view.scale + 4;
-  for (let index = state.points.length - 1; index >= 0; index -= 1) {
-    if (distance(world, state.points[index]) <= hitRadius) return state.points[index];
-  }
-  return null;
-}
-
-function addPoint(point) {
-  state.points.push({
-    id: state.nextId,
-    x: Number(point.x.toFixed(1)),
-    y: Number(point.y.toFixed(1)),
-    mapX: "",
-    mapY: ""
-  });
-  state.selectedId = state.nextId;
-  state.nextId += 1;
-  rebuildTin();
-}
-
-function selectedPoint() {
-  return state.points.find((point) => point.id === state.selectedId) || null;
-}
-
-function removeSelectedPoint() {
-  if (!state.selectedId) return;
-  state.points = state.points.filter((point) => point.id !== state.selectedId);
-  state.selectedId = null;
-  rebuildTin();
-}
-
-function updateSelectedPoint(changes) {
-  const point = selectedPoint();
-  if (!point) return;
-  Object.assign(point, changes);
-  rebuildTin();
 }
 
 function triangleKey(edge) {
@@ -161,17 +130,11 @@ function triangleKey(edge) {
 }
 
 function circumcircle(a, b, c) {
-  const ax = a.x;
-  const ay = a.y;
-  const bx = b.x;
-  const by = b.y;
-  const cx = c.x;
-  const cy = c.y;
-  const d = 2 * (ax * (by - cy) + bx * (cy - ay) + cx * (ay - by));
+  const d = 2 * (a.x * (b.y - c.y) + b.x * (c.y - a.y) + c.x * (a.y - b.y));
   if (Math.abs(d) < 0.000001) return { x: 0, y: 0, r: -1 };
-  const ux = ((ax * ax + ay * ay) * (by - cy) + (bx * bx + by * by) * (cy - ay) + (cx * cx + cy * cy) * (ay - by)) / d;
-  const uy = ((ax * ax + ay * ay) * (cx - bx) + (bx * bx + by * by) * (ax - cx) + (cx * cx + cy * cy) * (bx - ax)) / d;
-  return { x: ux, y: uy, r: Math.hypot(ux - ax, uy - ay) };
+  const ux = ((a.x * a.x + a.y * a.y) * (b.y - c.y) + (b.x * b.x + b.y * b.y) * (c.y - a.y) + (c.x * c.x + c.y * c.y) * (a.y - b.y)) / d;
+  const uy = ((a.x * a.x + a.y * a.y) * (c.x - b.x) + (b.x * b.x + b.y * b.y) * (a.x - c.x) + (c.x * c.x + c.y * c.y) * (b.x - a.x)) / d;
+  return { x: ux, y: uy, r: Math.hypot(ux - a.x, uy - a.y) };
 }
 
 function isInsideCircle(point, circle) {
@@ -189,9 +152,7 @@ function buildDelaunay(points) {
     maxY: Math.max(box.maxY, point.y)
   }), { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity });
 
-  const dx = bounds.maxX - bounds.minX || 1;
-  const dy = bounds.maxY - bounds.minY || 1;
-  const span = Math.max(dx, dy);
+  const span = Math.max(bounds.maxX - bounds.minX || 1, bounds.maxY - bounds.minY || 1);
   const midX = (bounds.minX + bounds.maxX) / 2;
   const midY = (bounds.minY + bounds.maxY) / 2;
   const superPoints = [
@@ -223,14 +184,21 @@ function buildDelaunay(points) {
     }
   }
 
-  return triangles
+  const result = triangles
     .filter((triangle) => triangle.vertices.every((point) => point.id > 0))
     .map((triangle) => {
       const vertices = triangle.vertices.map((vertex) => points.find((point) => point.id === vertex.id));
-      const quality = triangleQuality({ vertices });
+      const quality = triangleQuality(vertices);
+      const ids = vertices.map((point) => point.id);
       return {
-        ids: vertices.map((point) => point.id),
+        ids,
         vertices,
+        edges: [
+          edgeKeyFromIds(ids[0], ids[1]),
+          edgeKeyFromIds(ids[1], ids[2]),
+          edgeKeyFromIds(ids[2], ids[0])
+        ],
+        minAnglePointId: vertices[quality.minAngleVertexIndex].id,
         maxEdge: quality.maxEdge,
         minAngle: quality.minAngle,
         area: Math.abs(
@@ -241,97 +209,252 @@ function buildDelaunay(points) {
       };
     })
     .filter((triangle) => triangle.area > 0.01);
+
+  return annotateTinTopology(result);
 }
 
+function annotateTinTopology(triangles) {
+  const edgeUse = new Map();
+  for (const triangle of triangles) {
+    for (const edge of triangle.edges) edgeUse.set(edge, (edgeUse.get(edge) || 0) + 1);
+  }
+  for (const triangle of triangles) {
+    triangle.isBoundary = triangle.edges.some((edge) => edgeUse.get(edge) === 1);
+  }
+  return triangles;
+}\n
 function rebuildTin() {
   state.triangles = buildDelaunay(state.points);
   updateUi();
   render();
 }
 
-function drawGrid(width, height) {
+function resizeCanvases() {
+  const ratio = window.devicePixelRatio || 1;
+  for (const [space, canvas] of Object.entries(canvases)) {
+    const rect = canvas.getBoundingClientRect();
+    canvas.width = Math.max(1, Math.round(rect.width * ratio));
+    canvas.height = Math.max(1, Math.round(rect.height * ratio));
+    contexts[space].setTransform(ratio, 0, 0, ratio, 0, 0);
+  }
+  render();
+}
+
+function screenToWorld(space, clientX, clientY) {
+  const rect = canvases[space].getBoundingClientRect();
+  const view = state.views[space];
+  return {
+    x: (clientX - rect.left - view.x) / view.scale,
+    y: (clientY - rect.top - view.y) / view.scale
+  };
+}
+
+function worldToScreen(space, point) {
+  const view = state.views[space];
+  return {
+    x: point.x * view.scale + view.x,
+    y: point.y * view.scale + view.y
+  };
+}
+
+function findPointAt(space, world) {
+  const hitRadius = pointRadius / state.views[space].scale + 4;
+  for (let index = state.points.length - 1; index >= 0; index -= 1) {
+    const coord = pointCoord(state.points[index], space);
+    if (coord && distance(world, coord) <= hitRadius) return state.points[index];
+  }
+  return null;
+}
+
+function addCctvPoint(world) {
+  const point = {
+    id: state.nextId,
+    x: Number(world.x.toFixed(1)),
+    y: Number(world.y.toFixed(1)),
+    mapX: null,
+    mapY: null
+  };
+  state.points.push(point);
+  state.selectedId = point.id;
+  state.nextId += 1;
+  rebuildTin();
+}
+
+function setMapCoord(point, world) {
+  point.mapX = Number(world.x.toFixed(1));
+  point.mapY = Number(world.y.toFixed(1));
+  updateUi();
+  render();
+}
+
+function updateSelectedPoint(changes) {
+  const point = selectedPoint();
+  if (!point) return;
+  Object.assign(point, changes);
+  rebuildTin();
+}
+
+function removeSelectedPoint() {
+  if (!state.selectedId) return;
+  state.points = state.points.filter((point) => point.id !== state.selectedId);
+  state.selectedId = null;
+  rebuildTin();
+}
+
+function setMode(mode) {
+  state.mode = mode;
+  ui.modeButtons.forEach((button) => button.classList.toggle("active", button.dataset.mode === mode));
+  canvases.cctv.style.cursor = mode === "add" ? "crosshair" : "default";
+  canvases.map.style.cursor = "crosshair";
+}
+
+function fitView(space) {
+  const canvas = canvases[space];
+  const rect = canvas.getBoundingClientRect();
+  const image = state.images[space];
+  const padding = 54;
+  let bounds;
+
+  if (image) {
+    bounds = { minX: 0, minY: 0, maxX: image.width, maxY: image.height };
+  } else {
+    const coords = state.points.map((point) => pointCoord(point, space)).filter(Boolean);
+    if (coords.length) {
+      bounds = coords.reduce((box, point) => ({
+        minX: Math.min(box.minX, point.x),
+        minY: Math.min(box.minY, point.y),
+        maxX: Math.max(box.maxX, point.x),
+        maxY: Math.max(box.maxY, point.y)
+      }), { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity });
+    } else {
+      bounds = { minX: 0, minY: 0, maxX: rect.width, maxY: rect.height };
+    }
+  }
+
+  const width = Math.max(1, bounds.maxX - bounds.minX);
+  const height = Math.max(1, bounds.maxY - bounds.minY);
+  const view = state.views[space];
+  view.scale = Math.min((rect.width - padding * 2) / width, (rect.height - padding * 2) / height, 1.8);
+  view.x = (rect.width - width * view.scale) / 2 - bounds.minX * view.scale;
+  view.y = (rect.height - height * view.scale) / 2 - bounds.minY * view.scale;
+}
+
+function fitBothViews() {
+  fitView("map");
+  fitView("cctv");
+  render();
+}
+
+function drawGrid(space) {
   if (!ui.showGrid.checked) return;
-  const step = 50 * state.view.scale;
+  const ctx = contexts[space];
+  const canvas = canvases[space];
+  const rect = canvas.getBoundingClientRect();
+  const view = state.views[space];
+  const step = 50 * view.scale;
   if (step < 10) return;
   ctx.save();
   ctx.strokeStyle = "rgba(58, 71, 86, 0.14)";
   ctx.lineWidth = 1;
-  const startX = ((state.view.x % step) + step) % step;
-  const startY = ((state.view.y % step) + step) % step;
-  for (let x = startX; x < width; x += step) {
+  const startX = ((view.x % step) + step) % step;
+  const startY = ((view.y % step) + step) % step;
+  for (let x = startX; x < rect.width; x += step) {
     ctx.beginPath();
     ctx.moveTo(x, 0);
-    ctx.lineTo(x, height);
+    ctx.lineTo(x, rect.height);
     ctx.stroke();
   }
-  for (let y = startY; y < height; y += step) {
+  for (let y = startY; y < rect.height; y += step) {
     ctx.beginPath();
     ctx.moveTo(0, y);
-    ctx.lineTo(width, y);
+    ctx.lineTo(rect.width, y);
     ctx.stroke();
   }
   ctx.restore();
 }
 
-function drawImage() {
-  if (!state.image || !ui.showImage.checked) return;
+function drawImage(space) {
+  const image = state.images[space];
+  if (!image || !ui.showImage.checked) return;
+  const ctx = contexts[space];
+  const view = state.views[space];
   ctx.save();
   ctx.globalAlpha = 0.92;
-  ctx.drawImage(
-    state.image,
-    state.view.x,
-    state.view.y,
-    state.image.width * state.view.scale,
-    state.image.height * state.view.scale
-  );
+  ctx.drawImage(image, view.x, view.y, image.width * view.scale, image.height * view.scale);
   ctx.restore();
 }
 
-function drawTin() {
-  const longOpacity = Number(ui.longEdgeOpacity.value) / 100;
+function drawTin(space) {
+  const ctx = contexts[space];
+  const opacity = Number(ui.warningOpacity.value) / 100;
   ctx.save();
-
   for (const triangle of state.triangles) {
     const status = tinStatus(triangle);
-    if (!status.valid && ui.hideLongTin.checked) continue;
-    const points = triangle.vertices.map(worldToScreen);
+    if (status.excluded && ui.hideExcludedTin.checked) continue;
+    const coords = triangle.vertices.map((point) => pointCoord(point, space));
+    if (coords.some((coord) => !coord)) continue;
+    const points = coords.map((coord) => worldToScreen(space, coord));
     ctx.beginPath();
     ctx.moveTo(points[0].x, points[0].y);
     ctx.lineTo(points[1].x, points[1].y);
     ctx.lineTo(points[2].x, points[2].y);
     ctx.closePath();
+
     if (status.valid) {
-      ctx.fillStyle = "rgba(15, 124, 128, 0.13)";
-      ctx.strokeStyle = "rgba(14, 116, 144, 0.88)";
+      ctx.fillStyle = space === "map" ? "rgba(37, 99, 235, 0.12)" : "rgba(15, 118, 110, 0.13)";
+      ctx.strokeStyle = space === "map" ? "rgba(37, 99, 235, 0.86)" : "rgba(15, 118, 110, 0.88)";
       ctx.lineWidth = 1.4;
-    } else if (status.tooSharp) {
-      ctx.fillStyle = `rgba(180, 35, 24, ${0.05 + longOpacity * 0.15})`;
-      ctx.strokeStyle = `rgba(180, 35, 24, ${longOpacity})`;
-      ctx.lineWidth = 1.1;
+    } else if (status.warning) {
+      ctx.fillStyle = status.tooSharp
+        ? `rgba(180, 35, 24, ${0.08 + opacity * 0.13})`
+        : `rgba(202, 107, 32, ${0.07 + opacity * 0.12})`;
+      ctx.strokeStyle = status.tooSharp ? "rgba(180, 35, 24, 0.9)" : "rgba(202, 107, 32, 0.86)";
+      ctx.lineWidth = 2;
+      ctx.setLineDash([7, 5]);
     } else {
-      ctx.fillStyle = `rgba(202, 107, 32, ${0.06 + longOpacity * 0.14})`;
-      ctx.strokeStyle = `rgba(202, 107, 32, ${longOpacity})`;
+      ctx.fillStyle = `rgba(202, 107, 32, ${0.06 + opacity * 0.14})`;
+      ctx.strokeStyle = `rgba(202, 107, 32, ${opacity})`;
       ctx.lineWidth = 1.1;
     }
+
     ctx.fill();
     ctx.stroke();
+    ctx.setLineDash([]);
   }
-
   ctx.restore();
 }
 
-function drawPoints() {
+function getPointRecommendations() {
+  const scores = new Map();
+  for (const triangle of state.triangles) {
+    const status = tinStatus(triangle);
+    if (!status.warning || !status.tooSharp) continue;
+    const current = scores.get(triangle.minAnglePointId) || { count: 0, minAngle: Infinity };
+    current.count += 1;
+    current.minAngle = Math.min(current.minAngle, triangle.minAngle);
+    scores.set(triangle.minAnglePointId, current);
+  }
+  return [...scores.entries()]
+    .map(([pointId, score]) => ({ pointId, ...score }))
+    .sort((a, b) => b.count - a.count || a.minAngle - b.minAngle)
+    .slice(0, 3);
+}
+
+function drawPoints(space) {
+  const ctx = contexts[space];
+  const recommendations = new Set(getPointRecommendations().map((item) => item.pointId));
   ctx.save();
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.font = "12px Segoe UI, sans-serif";
 
   for (const point of state.points) {
-    const screen = worldToScreen(point);
+    const coord = pointCoord(point, space);
+    if (!coord) continue;
+    const screen = worldToScreen(space, coord);
     const selected = point.id === state.selectedId;
     ctx.beginPath();
     ctx.arc(screen.x, screen.y, selected ? 9 : pointRadius, 0, Math.PI * 2);
-    ctx.fillStyle = selected ? "#cc5b33" : "#102a43";
+    ctx.fillStyle = selected ? "#cc5b33" : (space === "map" ? "#1d4ed8" : "#102a43");
     ctx.fill();
     ctx.lineWidth = selected ? 3 : 2;
     ctx.strokeStyle = "#ffffff";
@@ -342,122 +465,166 @@ function drawPoints() {
       ctx.font = "11px Segoe UI, sans-serif";
       ctx.fillText(point.id, screen.x, screen.y);
     }
-  }
 
+    if (recommendations.has(point.id)) {
+      ctx.beginPath();
+      ctx.arc(screen.x, screen.y, selected ? 16 : 14, 0, Math.PI * 2);
+      ctx.strokeStyle = "#b42318";
+      ctx.lineWidth = 2;
+      ctx.setLineDash([3, 3]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+  }
   ctx.restore();
 }
 
-function render() {
+function drawMapPrompt() {
+  const point = selectedPoint();
+  if (!point || hasMapCoord(point)) return;
+  const ctx = contexts.map;
+  const rect = canvases.map.getBoundingClientRect();
+  ctx.save();
+  ctx.fillStyle = "rgba(255, 255, 255, 0.9)";
+  ctx.strokeStyle = "rgba(37, 99, 235, 0.45)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.roundRect(18, rect.height - 62, Math.min(420, rect.width - 36), 44, 7);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = "#1e3a8a";
+  ctx.font = "13px Segoe UI, sans-serif";
+  ctx.fillText(`선택 포인트 #${point.id}의 지도 위치를 클릭하세요.`, 34, rect.height - 35);
+  ctx.restore();
+}
+
+function renderSpace(space) {
+  const canvas = canvases[space];
+  const ctx = contexts[space];
   const rect = canvas.getBoundingClientRect();
   ctx.clearRect(0, 0, rect.width, rect.height);
-  drawGrid(rect.width, rect.height);
-  drawImage();
-  drawTin();
-  drawPoints();
+  drawGrid(space);
+  drawImage(space);
+  drawTin(space);
+  drawPoints(space);
+  if (space === "map") drawMapPrompt();
+}
+
+function render() {
+  renderSpace("map");
+  renderSpace("cctv");
 }
 
 function updateUi() {
   const statuses = state.triangles.map(tinStatus);
-  const visibleTin = statuses.filter((status) => status.valid).length;
-  const longTin = statuses.filter((status) => status.tooLong).length;
-  const sharpTin = statuses.filter((status) => status.tooSharp).length;
-  const filteredTin = state.triangles.length - visibleTin;
-  const limit = Number(ui.edgeLimit.value);
-  const angleLimit = Number(ui.angleLimit.value);
-  ui.edgeValue.value = `${limit} px`;
-  ui.angleValue.value = `${angleLimit}°`;
-  ui.longEdgeValue.value = `${ui.longEdgeOpacity.value}%`;
-  ui.pointCount.textContent = String(state.points.length);
-  ui.tinCount.textContent = String(ui.hideLongTin.checked ? visibleTin : state.triangles.length);
-  ui.filteredCount.textContent = String(longTin);
-  ui.angleFilteredCount.textContent = String(sharpTin);
-
+  const includedTin = statuses.filter((status) => status.included).length;
+  const excludedTin = statuses.filter((status) => status.excluded).length;
+  const warningTin = statuses.filter((status) => status.warning).length;
+  const matched = state.points.filter(hasMapCoord).length;
+  const recommendations = getPointRecommendations();
   const point = selectedPoint();
+
+  ui.edgeValue.value = `${ui.edgeLimit.value} px`;
+  ui.angleValue.value = `${ui.angleLimit.value}°`;
+  ui.warningOpacityValue.value = `${ui.warningOpacity.value}%`;
+  ui.pointCount.textContent = String(state.points.length);
+  ui.matchedCount.textContent = `${matched}/${state.points.length}`;
+  ui.tinCount.textContent = String(ui.hideExcludedTin.checked ? includedTin : state.triangles.length);
+  ui.excludedCount.textContent = String(excludedTin);
+  ui.warningCount.textContent = String(warningTin);
+
   ui.emptySelection.classList.toggle("hidden", Boolean(point));
   ui.pointEditor.classList.toggle("hidden", !point);
-  if (point && document.activeElement !== ui.pointX && document.activeElement !== ui.pointY) {
-    ui.pointX.value = point.x;
-    ui.pointY.value = point.y;
+  if (point && ![ui.cctvX, ui.cctvY, ui.mapX, ui.mapY].includes(document.activeElement)) {
+    ui.cctvX.value = point.x;
+    ui.cctvY.value = point.y;
+    ui.mapX.value = hasMapCoord(point) ? point.mapX : "";
+    ui.mapY.value = hasMapCoord(point) ? point.mapY : "";
   }
-  if (point && document.activeElement !== ui.mapX && document.activeElement !== ui.mapY) {
-    ui.mapX.value = point.mapX || "";
-    ui.mapY.value = point.mapY || "";
-  }
-}
 
-function fitView() {
-  const rect = canvas.getBoundingClientRect();
-  const padding = 54;
-  let bounds;
-
-  if (state.image) {
-    bounds = { minX: 0, minY: 0, maxX: state.image.width, maxY: state.image.height };
-  } else if (state.points.length) {
-    bounds = state.points.reduce((box, point) => ({
-      minX: Math.min(box.minX, point.x),
-      minY: Math.min(box.minY, point.y),
-      maxX: Math.max(box.maxX, point.x),
-      maxY: Math.max(box.maxY, point.y)
-    }), { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity });
+  if (state.points.length < 3) {
+    ui.qualityAdvice.textContent = "CCTV 포인트 3개 이상부터 TIN 품질을 평가합니다.";
+  } else if (warningTin && recommendations.length) {
+    const labels = recommendations
+      .map((item) => `#${item.pointId} (${item.count}개, 최소 ${item.minAngle.toFixed(1)}°)`)
+      .join(", ");
+    ui.qualityAdvice.textContent = `내부 저품질 TIN은 지도 공백 방지를 위해 유지됩니다. 후보 ${labels}를 이동하거나 보조 포인트를 추가하세요.`;
+  } else if (excludedTin) {
+    ui.qualityAdvice.textContent = "외곽 저품질 TIN만 제외되었습니다. 내부 지도 매칭 공백은 만들지 않습니다.";
   } else {
-    bounds = { minX: 0, minY: 0, maxX: rect.width, maxY: rect.height };
+    ui.qualityAdvice.textContent = "현재 CCTV TIN 품질이 기준을 만족합니다.";
   }
-
-  const width = Math.max(1, bounds.maxX - bounds.minX);
-  const height = Math.max(1, bounds.maxY - bounds.minY);
-  state.view.scale = Math.min((rect.width - padding * 2) / width, (rect.height - padding * 2) / height, 1.8);
-  state.view.x = (rect.width - width * state.view.scale) / 2 - bounds.minX * state.view.scale;
-  state.view.y = (rect.height - height * state.view.scale) / 2 - bounds.minY * state.view.scale;
-  render();
 }
 
-function canvasPointerDown(event) {
-  const world = screenToWorld(event.clientX, event.clientY);
-  const point = findPointAt(world);
-  state.pointerDownAt = { x: event.clientX, y: event.clientY };
+function handlePointerDown(space, event) {
+  const world = screenToWorld(space, event.clientX, event.clientY);
+  const hit = findPointAt(space, world);
 
-  if (point) {
-    state.selectedId = point.id;
-    state.dragging = true;
-    state.dragOffset = { x: point.x - world.x, y: point.y - world.y };
+  if (hit) {
+    state.selectedId = hit.id;
+    state.dragging = {
+      space,
+      pointId: hit.id,
+      offset: {
+        x: pointCoord(hit, space).x - world.x,
+        y: pointCoord(hit, space).y - world.y
+      }
+    };
     setMode("select");
     updateUi();
     render();
     return;
   }
 
-  if (state.mode === "add") {
-    addPoint(world);
+  if (space === "cctv" && state.mode === "add") {
+    addCctvPoint(world);
+    return;
+  }
+
+  if (space === "map") {
+    const point = selectedPoint();
+    if (point) setMapCoord(point, world);
+    return;
+  }
+
+  state.selectedId = null;
+  updateUi();
+  render();
+}
+
+function handlePointerMove(space, event) {
+  if (!state.dragging || state.dragging.space !== space) return;
+  const point = state.points.find((item) => item.id === state.dragging.pointId);
+  if (!point) return;
+  const world = screenToWorld(space, event.clientX, event.clientY);
+  const x = Number((world.x + state.dragging.offset.x).toFixed(1));
+  const y = Number((world.y + state.dragging.offset.y).toFixed(1));
+
+  if (space === "cctv") {
+    point.x = x;
+    point.y = y;
+    rebuildTin();
   } else {
-    state.selectedId = null;
+    point.mapX = x;
+    point.mapY = y;
     updateUi();
     render();
   }
 }
 
-function canvasPointerMove(event) {
-  if (!state.dragging) return;
-  const point = selectedPoint();
-  if (!point) return;
-  const world = screenToWorld(event.clientX, event.clientY);
-  point.x = Number((world.x + state.dragOffset.x).toFixed(1));
-  point.y = Number((world.y + state.dragOffset.y).toFixed(1));
-  rebuildTin();
+function handlePointerUp() {
+  state.dragging = null;
 }
 
-function canvasPointerUp() {
-  state.dragging = false;
-  state.pointerDownAt = null;
-}
-
-function readImage(file) {
+function readImage(space, file) {
   const reader = new FileReader();
   reader.onload = () => {
     const image = new Image();
     image.onload = () => {
-      state.image = image;
-      state.imageSrc = reader.result;
-      fitView();
+      state.images[space] = image;
+      state.imageSrc[space] = reader.result;
+      fitView(space);
+      render();
     };
     image.src = reader.result;
   };
@@ -466,17 +633,20 @@ function readImage(file) {
 
 function exportData() {
   const data = {
-    version: 1,
+    version: 3,
     createdAt: new Date().toISOString(),
     edgeLimit: Number(ui.edgeLimit.value),
     angleLimit: Number(ui.angleLimit.value),
-    points: state.points.map(({ id, x, y, mapX, mapY }) => ({ id, x, y, mapX, mapY })),
+    points: state.points.map(({ id, x, y, mapX, mapY }) => ({ id, cctv: { x, y }, map: hasMapCoord({ mapX, mapY }) ? { x: mapX, y: mapY } : null })),
     triangles: state.triangles
-      .filter((triangle) => tinStatus(triangle).valid)
+      .filter((triangle) => tinStatus(triangle).included)
       .map((triangle) => ({
         pointIds: triangle.ids,
         maxEdge: Number(triangle.maxEdge.toFixed(2)),
-        minAngle: Number(triangle.minAngle.toFixed(2))
+        minAngle: Number(triangle.minAngle.toFixed(2)),
+        isBoundary: triangle.isBoundary,
+        mapReady: triangle.vertices.every(hasMapCoord),
+        quality: tinStatus(triangle).valid ? "ok" : "warning"
       }))
   };
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
@@ -493,19 +663,23 @@ function importData(file) {
     try {
       const data = JSON.parse(reader.result);
       if (!Array.isArray(data.points)) throw new Error("points 배열이 없습니다.");
-      state.points = data.points.map((point, index) => ({
-        id: Number(point.id) || index + 1,
-        x: Number(point.x) || 0,
-        y: Number(point.y) || 0,
-        mapX: point.mapX || "",
-        mapY: point.mapY || ""
-      }));
+      state.points = data.points.map((point, index) => {
+        const cctv = point.cctv || point;
+        const map = point.map || null;
+        return {
+          id: Number(point.id) || index + 1,
+          x: Number(cctv.x) || 0,
+          y: Number(cctv.y) || 0,
+          mapX: map ? Number(map.x) : (point.mapX !== "" && Number.isFinite(Number(point.mapX)) ? Number(point.mapX) : null),
+          mapY: map ? Number(map.y) : (point.mapY !== "" && Number.isFinite(Number(point.mapY)) ? Number(point.mapY) : null)
+        };
+      });
       state.nextId = Math.max(0, ...state.points.map((point) => point.id)) + 1;
       state.selectedId = null;
       if (data.edgeLimit) ui.edgeLimit.value = data.edgeLimit;
       if (data.angleLimit) ui.angleLimit.value = data.angleLimit;
       rebuildTin();
-      fitView();
+      fitBothViews();
     } catch (error) {
       alert(`JSON을 불러오지 못했습니다: ${error.message}`);
     }
@@ -513,23 +687,27 @@ function importData(file) {
   reader.readAsText(file);
 }
 
-canvas.addEventListener("pointerdown", canvasPointerDown);
-canvas.addEventListener("pointermove", canvasPointerMove);
-canvas.addEventListener("pointerup", canvasPointerUp);
-canvas.addEventListener("pointerleave", canvasPointerUp);
+for (const space of ["map", "cctv"]) {
+  canvases[space].addEventListener("pointerdown", (event) => handlePointerDown(space, event));
+  canvases[space].addEventListener("pointermove", (event) => handlePointerMove(space, event));
+  canvases[space].addEventListener("pointerup", handlePointerUp);
+  canvases[space].addEventListener("pointerleave", handlePointerUp);
+}
 
-window.addEventListener("resize", resizeCanvas);
+window.addEventListener("resize", () => {
+  resizeCanvases();
+  fitBothViews();
+});
+
 window.addEventListener("keydown", (event) => {
-  if (event.key === "Delete" || event.key === "Backspace") {
-    const tag = document.activeElement?.tagName;
-    if (tag !== "INPUT" && tag !== "TEXTAREA") removeSelectedPoint();
-  }
+  const tag = document.activeElement?.tagName;
+  if ((event.key === "Delete" || event.key === "Backspace") && tag !== "INPUT" && tag !== "TEXTAREA") removeSelectedPoint();
   if (event.key.toLowerCase() === "a") setMode("add");
   if (event.key.toLowerCase() === "v") setMode("select");
 });
 
 ui.modeButtons.forEach((button) => button.addEventListener("click", () => setMode(button.dataset.mode)));
-ui.fitBtn.addEventListener("click", fitView);
+ui.fitBtn.addEventListener("click", fitBothViews);
 ui.deletePointBtn.addEventListener("click", removeSelectedPoint);
 ui.clearBtn.addEventListener("click", () => {
   if (!confirm("모든 포인트와 TIN을 삭제할까요?")) return;
@@ -541,9 +719,14 @@ ui.clearBtn.addEventListener("click", () => {
 });
 ui.exportBtn.addEventListener("click", exportData);
 
-ui.imageInput.addEventListener("change", (event) => {
+ui.mapImageInput.addEventListener("change", (event) => {
   const [file] = event.target.files;
-  if (file) readImage(file);
+  if (file) readImage("map", file);
+});
+
+ui.cctvImageInput.addEventListener("change", (event) => {
+  const [file] = event.target.files;
+  if (file) readImage("cctv", file);
 });
 
 ui.jsonInput.addEventListener("change", (event) => {
@@ -551,17 +734,18 @@ ui.jsonInput.addEventListener("change", (event) => {
   if (file) importData(file);
 });
 
-[ui.showImage, ui.showGrid, ui.showLabels, ui.hideLongTin, ui.edgeLimit, ui.angleLimit, ui.longEdgeOpacity].forEach((control) => {
+[ui.showImage, ui.showGrid, ui.showLabels, ui.hideExcludedTin, ui.edgeLimit, ui.angleLimit, ui.warningOpacity].forEach((control) => {
   control.addEventListener("input", () => {
     updateUi();
     render();
   });
 });
 
-ui.pointX.addEventListener("change", () => updateSelectedPoint({ x: Number(ui.pointX.value) || 0 }));
-ui.pointY.addEventListener("change", () => updateSelectedPoint({ y: Number(ui.pointY.value) || 0 }));
-ui.mapX.addEventListener("input", () => updateSelectedPoint({ mapX: ui.mapX.value }));
-ui.mapY.addEventListener("input", () => updateSelectedPoint({ mapY: ui.mapY.value }));
+ui.cctvX.addEventListener("change", () => updateSelectedPoint({ x: Number(ui.cctvX.value) || 0 }));
+ui.cctvY.addEventListener("change", () => updateSelectedPoint({ y: Number(ui.cctvY.value) || 0 }));
+ui.mapX.addEventListener("change", () => updateSelectedPoint({ mapX: ui.mapX.value === "" ? null : Number(ui.mapX.value) }));
+ui.mapY.addEventListener("change", () => updateSelectedPoint({ mapY: ui.mapY.value === "" ? null : Number(ui.mapY.value) }));
 
-resizeCanvas();
-fitView();
+resizeCanvases();
+fitBothViews();
+setMode("add");
