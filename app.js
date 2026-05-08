@@ -1,3 +1,10 @@
+const VWORLD_KEY = "200C9F2A-A83F-3316-AEE2-5E92DED2F3D2";
+const VWORLD_TILE_SIZE = 256;
+const VWORLD_MIN_ZOOM = 7;
+const VWORLD_MAX_ZOOM = 19;
+const VWORLD_INITIAL = { lon: 126.9768, lat: 37.4016, zoom: 16 };
+const tileCache = new Map();
+
 const canvases = {
   map: document.querySelector("#mapCanvas"),
   cctv: document.querySelector("#cctvCanvas")
@@ -9,7 +16,6 @@ const contexts = {
 };
 
 const ui = {
-  mapImageInput: document.querySelector("#mapImageInput"),
   cctvImageInput: document.querySelector("#cctvImageInput"),
   jsonInput: document.querySelector("#jsonInput"),
   showImage: document.querySelector("#showImage"),
@@ -48,20 +54,32 @@ const state = {
   mode: "add",
   dragging: null,
   nextId: 1,
-  images: { map: null, cctv: null },
-  imageSrc: { map: null, cctv: null },
-  views: { map: { scale: 1, x: 0, y: 0 }, cctv: { scale: 1, x: 0, y: 0 } }
+  images: {
+    cctv: null
+  },
+  imageSrc: {
+    cctv: null
+  },
+  views: {
+    map: { ...VWORLD_INITIAL },
+    cctv: { scale: 1, x: 0, y: 0 }
+  }
 };
 
 const pointRadius = 7;
 
-function hasMapCoord(point) {
-  return Number.isFinite(point.mapX) && Number.isFinite(point.mapY);
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
 }
 
 function pointCoord(point, space) {
   if (space === "cctv") return { x: point.x, y: point.y };
-  return hasMapCoord(point) ? { x: point.mapX, y: point.mapY } : null;
+  if (!hasMapCoord(point)) return null;
+  return { x: point.mapX, y: point.mapY };
+}
+
+function hasMapCoord(point) {
+  return Number.isFinite(point.mapX) && Number.isFinite(point.mapY);
 }
 
 function selectedPoint() {
@@ -79,7 +97,7 @@ function edgeKeyFromIds(a, b) {
 function angleFromSides(adjacentA, adjacentB, opposite) {
   const denominator = 2 * adjacentA * adjacentB;
   if (denominator <= 0) return 0;
-  const cosine = Math.max(-1, Math.min(1, (adjacentA * adjacentA + adjacentB * adjacentB - opposite * opposite) / denominator));
+  const cosine = clamp((adjacentA * adjacentA + adjacentB * adjacentB - opposite * opposite) / denominator, -1, 1);
   return Math.acos(cosine) * 180 / Math.PI;
 }
 
@@ -88,16 +106,31 @@ function triangleQuality(vertices) {
   const ab = distance(a, b);
   const bc = distance(b, c);
   const ca = distance(c, a);
-  const angles = [angleFromSides(ab, ca, bc), angleFromSides(ab, bc, ca), angleFromSides(ca, bc, ab)];
+  const angles = [
+    angleFromSides(ab, ca, bc),
+    angleFromSides(ab, bc, ca),
+    angleFromSides(ca, bc, ab)
+  ];
   const minAngle = Math.min(...angles);
-  return { maxEdge: Math.max(ab, bc, ca), minAngle, minAngleVertexIndex: angles.indexOf(minAngle) };
+  return {
+    maxEdge: Math.max(ab, bc, ca),
+    minAngle,
+    minAngleVertexIndex: angles.indexOf(minAngle)
+  };
 }
 
 function tinStatus(triangle) {
   const tooLong = triangle.maxEdge > Number(ui.edgeLimit.value);
   const tooSharp = triangle.minAngle < Number(ui.angleLimit.value);
   const excluded = triangle.isBoundary && (tooLong || tooSharp);
-  return { included: !excluded, valid: !tooLong && !tooSharp, warning: !excluded && (tooLong || tooSharp), excluded, tooLong, tooSharp };
+  return {
+    included: !excluded,
+    valid: !tooLong && !tooSharp,
+    warning: !excluded && (tooLong || tooSharp),
+    excluded,
+    tooLong,
+    tooSharp
+  };
 }
 
 function triangleKey(edge) {
@@ -118,11 +151,15 @@ function isInsideCircle(point, circle) {
 
 function buildDelaunay(points) {
   if (points.length < 3) return [];
+
   const workPoints = points.map((point, index) => ({ ...point, _triIndex: index }));
   const bounds = workPoints.reduce((box, point) => ({
-    minX: Math.min(box.minX, point.x), minY: Math.min(box.minY, point.y),
-    maxX: Math.max(box.maxX, point.x), maxY: Math.max(box.maxY, point.y)
+    minX: Math.min(box.minX, point.x),
+    minY: Math.min(box.minY, point.y),
+    maxX: Math.max(box.maxX, point.x),
+    maxY: Math.max(box.maxY, point.y)
   }), { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity });
+
   const span = Math.max(bounds.maxX - bounds.minX || 1, bounds.maxY - bounds.minY || 1);
   const midX = (bounds.minX + bounds.maxX) / 2;
   const midY = (bounds.minY + bounds.maxY) / 2;
@@ -131,11 +168,13 @@ function buildDelaunay(points) {
     { id: -2, x: midX, y: midY + 20 * span, _triIndex: workPoints.length + 1 },
     { id: -3, x: midX + 20 * span, y: midY - span, _triIndex: workPoints.length + 2 }
   ];
+
   let triangles = [{ vertices: superPoints, circle: circumcircle(...superPoints) }];
 
   for (const point of workPoints) {
     const bad = triangles.filter((triangle) => isInsideCircle(point, triangle.circle));
     const edgeMap = new Map();
+
     for (const triangle of bad) {
       const [a, b, c] = triangle.vertices;
       [[a, b], [b, c], [c, a]].forEach((edge) => {
@@ -144,7 +183,9 @@ function buildDelaunay(points) {
         else edgeMap.set(key, edge);
       });
     }
+
     triangles = triangles.filter((triangle) => !bad.includes(triangle));
+
     for (const edge of edgeMap.values()) {
       const vertices = [edge[0], edge[1], point];
       triangles.push({ vertices, circle: circumcircle(...vertices) });
@@ -160,22 +201,114 @@ function buildDelaunay(points) {
       return {
         ids,
         vertices,
-        edges: [edgeKeyFromIds(ids[0], ids[1]), edgeKeyFromIds(ids[1], ids[2]), edgeKeyFromIds(ids[2], ids[0])],
+        edges: [
+          edgeKeyFromIds(ids[0], ids[1]),
+          edgeKeyFromIds(ids[1], ids[2]),
+          edgeKeyFromIds(ids[2], ids[0])
+        ],
         minAnglePointId: vertices[quality.minAngleVertexIndex].id,
         maxEdge: quality.maxEdge,
         minAngle: quality.minAngle,
-        area: Math.abs((vertices[0].x * (vertices[1].y - vertices[2].y) + vertices[1].x * (vertices[2].y - vertices[0].y) + vertices[2].x * (vertices[0].y - vertices[1].y)) / 2)
+        area: Math.abs(
+          (vertices[0].x * (vertices[1].y - vertices[2].y) +
+          vertices[1].x * (vertices[2].y - vertices[0].y) +
+          vertices[2].x * (vertices[0].y - vertices[1].y)) / 2
+        )
       };
     })
     .filter((triangle) => triangle.area > 0.01);
+
   return annotateTinTopology(result);
 }
 
 function annotateTinTopology(triangles) {
   const edgeUse = new Map();
-  for (const triangle of triangles) for (const edge of triangle.edges) edgeUse.set(edge, (edgeUse.get(edge) || 0) + 1);
-  for (const triangle of triangles) triangle.isBoundary = triangle.edges.some((edge) => edgeUse.get(edge) === 1);
+  for (const triangle of triangles) {
+    for (const edge of triangle.edges) edgeUse.set(edge, (edgeUse.get(edge) || 0) + 1);
+  }
+  for (const triangle of triangles) {
+    triangle.isBoundary = triangle.edges.some((edge) => edgeUse.get(edge) === 1);
+  }
   return triangles;
+}
+
+function lonLatToTilePixel(lon, lat, zoom) {
+  const safeLat = clamp(lat, -85.05112878, 85.05112878);
+  const sin = Math.sin(safeLat * Math.PI / 180);
+  const scale = VWORLD_TILE_SIZE * 2 ** zoom;
+  return {
+    x: ((lon + 180) / 360) * scale,
+    y: (0.5 - Math.log((1 + sin) / (1 - sin)) / (4 * Math.PI)) * scale
+  };
+}
+
+function tilePixelToLonLat(x, y, zoom) {
+  const scale = VWORLD_TILE_SIZE * 2 ** zoom;
+  const lon = x / scale * 360 - 180;
+  const n = Math.PI - 2 * Math.PI * y / scale;
+  const lat = 180 / Math.PI * Math.atan(0.5 * (Math.exp(n) - Math.exp(-n)));
+  return { x: lon, y: lat };
+}
+
+function mapCenterPixel() {
+  const view = state.views.map;
+  return lonLatToTilePixel(view.lon, view.lat, view.zoom);
+}
+
+function lonLatToScreen(coord) {
+  const rect = canvases.map.getBoundingClientRect();
+  const center = mapCenterPixel();
+  const pixel = lonLatToTilePixel(coord.x, coord.y, state.views.map.zoom);
+  return {
+    x: rect.width / 2 + pixel.x - center.x,
+    y: rect.height / 2 + pixel.y - center.y
+  };
+}
+
+function screenToLonLat(clientX, clientY) {
+  const rect = canvases.map.getBoundingClientRect();
+  const center = mapCenterPixel();
+  const x = center.x + clientX - rect.left - rect.width / 2;
+  const y = center.y + clientY - rect.top - rect.height / 2;
+  return tilePixelToLonLat(x, y, state.views.map.zoom);
+}
+
+function screenToWorld(space, clientX, clientY) {
+  if (space === "map") return screenToLonLat(clientX, clientY);
+  const rect = canvases[space].getBoundingClientRect();
+  const view = state.views[space];
+  return {
+    x: (clientX - rect.left - view.x) / view.scale,
+    y: (clientY - rect.top - view.y) / view.scale
+  };
+}
+
+function worldToScreen(space, point) {
+  if (space === "map") return lonLatToScreen(point);
+  const view = state.views[space];
+  return {
+    x: point.x * view.scale + view.x,
+    y: point.y * view.scale + view.y
+  };
+}
+
+function findPointAt(space, world) {
+  if (space === "map") {
+    const target = lonLatToScreen(world);
+    const hitRadius = pointRadius + 5;
+    for (let index = state.points.length - 1; index >= 0; index -= 1) {
+      const coord = pointCoord(state.points[index], space);
+      if (coord && distance(target, lonLatToScreen(coord)) <= hitRadius) return state.points[index];
+    }
+    return null;
+  }
+
+  const hitRadius = pointRadius / state.views[space].scale + 4;
+  for (let index = state.points.length - 1; index >= 0; index -= 1) {
+    const coord = pointCoord(state.points[index], space);
+    if (coord && distance(world, coord) <= hitRadius) return state.points[index];
+  }
+  return null;
 }
 
 function rebuildTin() {
@@ -195,28 +328,14 @@ function resizeCanvases() {
   render();
 }
 
-function screenToWorld(space, clientX, clientY) {
-  const rect = canvases[space].getBoundingClientRect();
-  const view = state.views[space];
-  return { x: (clientX - rect.left - view.x) / view.scale, y: (clientY - rect.top - view.y) / view.scale };
-}
-
-function worldToScreen(space, point) {
-  const view = state.views[space];
-  return { x: point.x * view.scale + view.x, y: point.y * view.scale + view.y };
-}
-
-function findPointAt(space, world) {
-  const hitRadius = pointRadius / state.views[space].scale + 4;
-  for (let index = state.points.length - 1; index >= 0; index -= 1) {
-    const coord = pointCoord(state.points[index], space);
-    if (coord && distance(world, coord) <= hitRadius) return state.points[index];
-  }
-  return null;
-}
-
 function addCctvPoint(world) {
-  const point = { id: state.nextId, x: Number(world.x.toFixed(1)), y: Number(world.y.toFixed(1)), mapX: null, mapY: null };
+  const point = {
+    id: state.nextId,
+    x: Number(world.x.toFixed(1)),
+    y: Number(world.y.toFixed(1)),
+    mapX: null,
+    mapY: null
+  };
   state.points.push(point);
   state.selectedId = point.id;
   state.nextId += 1;
@@ -224,8 +343,8 @@ function addCctvPoint(world) {
 }
 
 function setMapCoord(point, world) {
-  point.mapX = Number(world.x.toFixed(1));
-  point.mapY = Number(world.y.toFixed(1));
+  point.mapX = Number(world.x.toFixed(7));
+  point.mapY = Number(world.y.toFixed(7));
   updateUi();
   render();
 }
@@ -252,18 +371,40 @@ function setMode(mode) {
 }
 
 function fitView(space) {
-  const rect = canvases[space].getBoundingClientRect();
+  if (space === "map") {
+    const coords = state.points.map((point) => pointCoord(point, "map")).filter(Boolean);
+    if (coords.length) {
+      state.views.map.lon = coords.reduce((sum, coord) => sum + coord.x, 0) / coords.length;
+      state.views.map.lat = coords.reduce((sum, coord) => sum + coord.y, 0) / coords.length;
+      if (coords.length === 1) state.views.map.zoom = 17;
+    } else {
+      Object.assign(state.views.map, VWORLD_INITIAL);
+    }
+    return;
+  }
+
+  const canvas = canvases[space];
+  const rect = canvas.getBoundingClientRect();
   const image = state.images[space];
   const padding = 54;
   let bounds;
+
   if (image) {
     bounds = { minX: 0, minY: 0, maxX: image.width, maxY: image.height };
   } else {
     const coords = state.points.map((point) => pointCoord(point, space)).filter(Boolean);
-    bounds = coords.length
-      ? coords.reduce((box, point) => ({ minX: Math.min(box.minX, point.x), minY: Math.min(box.minY, point.y), maxX: Math.max(box.maxX, point.x), maxY: Math.max(box.maxY, point.y) }), { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity })
-      : { minX: 0, minY: 0, maxX: rect.width, maxY: rect.height };
+    if (coords.length) {
+      bounds = coords.reduce((box, point) => ({
+        minX: Math.min(box.minX, point.x),
+        minY: Math.min(box.minY, point.y),
+        maxX: Math.max(box.maxX, point.x),
+        maxY: Math.max(box.maxY, point.y)
+      }), { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity });
+    } else {
+      bounds = { minX: 0, minY: 0, maxX: rect.width, maxY: rect.height };
+    }
   }
+
   const width = Math.max(1, bounds.maxX - bounds.minX);
   const height = Math.max(1, bounds.maxY - bounds.minY);
   const view = state.views[space];
@@ -279,9 +420,10 @@ function fitBothViews() {
 }
 
 function drawGrid(space) {
-  if (!ui.showGrid.checked) return;
+  if (space === "map" || !ui.showGrid.checked) return;
   const ctx = contexts[space];
-  const rect = canvases[space].getBoundingClientRect();
+  const canvas = canvases[space];
+  const rect = canvas.getBoundingClientRect();
   const view = state.views[space];
   const step = 50 * view.scale;
   if (step < 10) return;
@@ -290,12 +432,87 @@ function drawGrid(space) {
   ctx.lineWidth = 1;
   const startX = ((view.x % step) + step) % step;
   const startY = ((view.y % step) + step) % step;
-  for (let x = startX; x < rect.width; x += step) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, rect.height); ctx.stroke(); }
-  for (let y = startY; y < rect.height; y += step) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(rect.width, y); ctx.stroke(); }
+  for (let x = startX; x < rect.width; x += step) {
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, rect.height);
+    ctx.stroke();
+  }
+  for (let y = startY; y < rect.height; y += step) {
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(rect.width, y);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function tileUrl(z, y, x) {
+  return `https://api.vworld.kr/req/wmts/1.0.0/${VWORLD_KEY}/Base/${z}/${y}/${x}.png`;
+}
+
+function getTileImage(z, y, x) {
+  const url = tileUrl(z, y, x);
+  if (tileCache.has(url)) return tileCache.get(url);
+  const image = new Image();
+  image.crossOrigin = "anonymous";
+  image.decoding = "async";
+  image.onload = render;
+  image.onerror = render;
+  image.src = url;
+  tileCache.set(url, image);
+  return image;
+}
+
+function drawVWorldMap() {
+  const ctx = contexts.map;
+  const rect = canvases.map.getBoundingClientRect();
+  const view = state.views.map;
+  const zoom = clamp(Math.round(view.zoom), VWORLD_MIN_ZOOM, VWORLD_MAX_ZOOM);
+  const maxTiles = 2 ** zoom;
+  const center = mapCenterPixel();
+  const topLeft = {
+    x: center.x - rect.width / 2,
+    y: center.y - rect.height / 2
+  };
+  const startX = Math.floor(topLeft.x / VWORLD_TILE_SIZE);
+  const startY = Math.floor(topLeft.y / VWORLD_TILE_SIZE);
+  const endX = Math.floor((topLeft.x + rect.width) / VWORLD_TILE_SIZE);
+  const endY = Math.floor((topLeft.y + rect.height) / VWORLD_TILE_SIZE);
+
+  ctx.save();
+  ctx.fillStyle = "#dbe3ec";
+  ctx.fillRect(0, 0, rect.width, rect.height);
+
+  for (let tileY = startY; tileY <= endY; tileY += 1) {
+    if (tileY < 0 || tileY >= maxTiles) continue;
+    for (let tileX = startX; tileX <= endX; tileX += 1) {
+      const wrappedX = ((tileX % maxTiles) + maxTiles) % maxTiles;
+      const image = getTileImage(zoom, tileY, wrappedX);
+      const x = tileX * VWORLD_TILE_SIZE - topLeft.x;
+      const y = tileY * VWORLD_TILE_SIZE - topLeft.y;
+      if (image.complete && image.naturalWidth) {
+        ctx.drawImage(image, x, y, VWORLD_TILE_SIZE, VWORLD_TILE_SIZE);
+      } else {
+        ctx.fillStyle = "#eef2f7";
+        ctx.fillRect(x, y, VWORLD_TILE_SIZE, VWORLD_TILE_SIZE);
+      }
+    }
+  }
+
+  ctx.fillStyle = "rgba(255, 255, 255, 0.88)";
+  ctx.fillRect(10, rect.height - 28, 92, 20);
+  ctx.fillStyle = "#475569";
+  ctx.font = "11px Segoe UI, sans-serif";
+  ctx.fillText("VWorld Base", 18, rect.height - 14);
   ctx.restore();
 }
 
 function drawImage(space) {
+  if (space === "map") {
+    drawVWorldMap();
+    return;
+  }
   const image = state.images[space];
   if (!image || !ui.showImage.checked) return;
   const ctx = contexts[space];
@@ -321,12 +538,15 @@ function drawTin(space) {
     ctx.lineTo(points[1].x, points[1].y);
     ctx.lineTo(points[2].x, points[2].y);
     ctx.closePath();
+
     if (status.valid) {
       ctx.fillStyle = space === "map" ? "rgba(37, 99, 235, 0.12)" : "rgba(15, 118, 110, 0.13)";
       ctx.strokeStyle = space === "map" ? "rgba(37, 99, 235, 0.86)" : "rgba(15, 118, 110, 0.88)";
       ctx.lineWidth = 1.4;
     } else if (status.warning) {
-      ctx.fillStyle = status.tooSharp ? `rgba(180, 35, 24, ${0.08 + opacity * 0.13})` : `rgba(202, 107, 32, ${0.07 + opacity * 0.12})`;
+      ctx.fillStyle = status.tooSharp
+        ? `rgba(180, 35, 24, ${0.08 + opacity * 0.13})`
+        : `rgba(202, 107, 32, ${0.07 + opacity * 0.12})`;
       ctx.strokeStyle = status.tooSharp ? "rgba(180, 35, 24, 0.9)" : "rgba(202, 107, 32, 0.86)";
       ctx.lineWidth = 2;
       ctx.setLineDash([7, 5]);
@@ -335,6 +555,7 @@ function drawTin(space) {
       ctx.strokeStyle = `rgba(202, 107, 32, ${opacity})`;
       ctx.lineWidth = 1.1;
     }
+
     ctx.fill();
     ctx.stroke();
     ctx.setLineDash([]);
@@ -352,7 +573,10 @@ function getPointRecommendations() {
     current.minAngle = Math.min(current.minAngle, triangle.minAngle);
     scores.set(triangle.minAnglePointId, current);
   }
-  return [...scores.entries()].map(([pointId, score]) => ({ pointId, ...score })).sort((a, b) => b.count - a.count || a.minAngle - b.minAngle).slice(0, 3);
+  return [...scores.entries()]
+    .map(([pointId, score]) => ({ pointId, ...score }))
+    .sort((a, b) => b.count - a.count || a.minAngle - b.minAngle)
+    .slice(0, 3);
 }
 
 function drawPoints(space) {
@@ -361,6 +585,7 @@ function drawPoints(space) {
   ctx.save();
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
+
   for (const point of state.points) {
     const coord = pointCoord(point, space);
     if (!coord) continue;
@@ -373,11 +598,13 @@ function drawPoints(space) {
     ctx.lineWidth = selected ? 3 : 2;
     ctx.strokeStyle = "#ffffff";
     ctx.stroke();
+
     if (ui.showLabels.checked) {
       ctx.fillStyle = "#ffffff";
       ctx.font = "11px Segoe UI, sans-serif";
       ctx.fillText(point.id, screen.x, screen.y);
     }
+
     if (recommendations.has(point.id)) {
       ctx.beginPath();
       ctx.arc(screen.x, screen.y, selected ? 16 : 14, 0, Math.PI * 2);
@@ -401,8 +628,8 @@ function drawMapPrompt() {
   ctx.strokeStyle = "rgba(37, 99, 235, 0.45)";
   ctx.lineWidth = 1;
   ctx.beginPath();
-  if (ctx.roundRect) ctx.roundRect(18, rect.height - 62, Math.min(420, rect.width - 36), 44, 7);
-  else ctx.rect(18, rect.height - 62, Math.min(420, rect.width - 36), 44);
+  if (ctx.roundRect) ctx.roundRect(18, rect.height - 62, Math.min(450, rect.width - 36), 44, 7);
+  else ctx.rect(18, rect.height - 62, Math.min(450, rect.width - 36), 44);
   ctx.fill();
   ctx.stroke();
   ctx.fillStyle = "#1e3a8a";
@@ -412,8 +639,9 @@ function drawMapPrompt() {
 }
 
 function renderSpace(space) {
-  const rect = canvases[space].getBoundingClientRect();
+  const canvas = canvases[space];
   const ctx = contexts[space];
+  const rect = canvas.getBoundingClientRect();
   ctx.clearRect(0, 0, rect.width, rect.height);
   drawGrid(space);
   drawImage(space);
@@ -435,6 +663,7 @@ function updateUi() {
   const matched = state.points.filter(hasMapCoord).length;
   const recommendations = getPointRecommendations();
   const point = selectedPoint();
+
   ui.edgeValue.value = `${ui.edgeLimit.value} px`;
   ui.angleValue.value = `${ui.angleLimit.value}°`;
   ui.warningOpacityValue.value = `${ui.warningOpacity.value}%`;
@@ -443,42 +672,61 @@ function updateUi() {
   ui.tinCount.textContent = String(ui.hideExcludedTin.checked ? includedTin : state.triangles.length);
   ui.excludedCount.textContent = String(excludedTin);
   ui.warningCount.textContent = String(warningTin);
+
   ui.emptySelection.classList.toggle("hidden", Boolean(point));
   ui.pointEditor.classList.toggle("hidden", !point);
   if (point && ![ui.cctvX, ui.cctvY, ui.mapX, ui.mapY].includes(document.activeElement)) {
     ui.cctvX.value = point.x;
     ui.cctvY.value = point.y;
-    ui.mapX.value = hasMapCoord(point) ? point.mapX : "";
-    ui.mapY.value = hasMapCoord(point) ? point.mapY : "";
+    ui.mapX.value = hasMapCoord(point) ? point.mapX.toFixed(7) : "";
+    ui.mapY.value = hasMapCoord(point) ? point.mapY.toFixed(7) : "";
   }
-  if (state.points.length < 3) ui.qualityAdvice.textContent = "CCTV 포인트 3개 이상부터 TIN 품질을 평가합니다.";
-  else if (warningTin && recommendations.length) {
-    const labels = recommendations.map((item) => `#${item.pointId} (${item.count}개, 최소 ${item.minAngle.toFixed(1)}°)`).join(", ");
-    ui.qualityAdvice.textContent = `내부 저품질 TIN은 지도 공백 방지를 위해 유지됩니다. 후보 ${labels}를 이동하거나 보조 포인트를 추가하세요.`;
-  } else if (excludedTin) ui.qualityAdvice.textContent = "외곽 저품질 TIN만 제외되었습니다. 내부 지도 매칭 공백은 만들지 않습니다.";
-  else ui.qualityAdvice.textContent = "현재 CCTV TIN 품질이 기준을 만족합니다.";
+
+  if (state.points.length < 3) {
+    ui.qualityAdvice.textContent = "CCTV 포인트 3개 이상부터 TIN 품질을 평가합니다.";
+  } else if (warningTin && recommendations.length) {
+    const labels = recommendations
+      .map((item) => `#${item.pointId} (${item.count}개, 최소 ${item.minAngle.toFixed(1)}°)`)
+      .join(", ");
+    ui.qualityAdvice.textContent = `내부 예각 TIN은 지도 공백 방지를 위해 유지됩니다. 후보 ${labels}를 이동하거나 보조 포인트를 추가하세요.`;
+  } else if (excludedTin) {
+    ui.qualityAdvice.textContent = "외곽의 품질 낮은 TIN만 제외했습니다. 내부 지도 매칭 공백은 만들지 않습니다.";
+  } else {
+    ui.qualityAdvice.textContent = "현재 CCTV TIN 품질이 기준을 만족합니다.";
+  }
 }
 
 function handlePointerDown(space, event) {
   const world = screenToWorld(space, event.clientX, event.clientY);
   const hit = findPointAt(space, world);
+
   if (hit) {
     state.selectedId = hit.id;
-    state.dragging = { space, pointId: hit.id, offset: { x: pointCoord(hit, space).x - world.x, y: pointCoord(hit, space).y - world.y } };
+    state.dragging = {
+      space,
+      pointId: hit.id,
+      offset: {
+        x: pointCoord(hit, space).x - world.x,
+        y: pointCoord(hit, space).y - world.y
+      }
+    };
     setMode("select");
     updateUi();
     render();
     return;
   }
+
   if (space === "cctv" && state.mode === "add") {
     addCctvPoint(world);
     return;
   }
+
   if (space === "map") {
     const point = selectedPoint();
     if (point) setMapCoord(point, world);
     return;
   }
+
   state.selectedId = null;
   updateUi();
   render();
@@ -489,15 +737,14 @@ function handlePointerMove(space, event) {
   const point = state.points.find((item) => item.id === state.dragging.pointId);
   if (!point) return;
   const world = screenToWorld(space, event.clientX, event.clientY);
-  const x = Number((world.x + state.dragging.offset.x).toFixed(1));
-  const y = Number((world.y + state.dragging.offset.y).toFixed(1));
+
   if (space === "cctv") {
-    point.x = x;
-    point.y = y;
+    point.x = Number((world.x + state.dragging.offset.x).toFixed(1));
+    point.y = Number((world.y + state.dragging.offset.y).toFixed(1));
     rebuildTin();
   } else {
-    point.mapX = x;
-    point.mapY = y;
+    point.mapX = Number((world.x + state.dragging.offset.x).toFixed(7));
+    point.mapY = Number((world.y + state.dragging.offset.y).toFixed(7));
     updateUi();
     render();
   }
@@ -505,6 +752,25 @@ function handlePointerMove(space, event) {
 
 function handlePointerUp() {
   state.dragging = null;
+}
+
+function handleMapWheel(event) {
+  event.preventDefault();
+  const rect = canvases.map.getBoundingClientRect();
+  const before = screenToLonLat(event.clientX, event.clientY);
+  const nextZoom = clamp(state.views.map.zoom + (event.deltaY < 0 ? 1 : -1), VWORLD_MIN_ZOOM, VWORLD_MAX_ZOOM);
+  if (nextZoom === state.views.map.zoom) return;
+
+  const pointerPixel = lonLatToTilePixel(before.x, before.y, nextZoom);
+  const centerPixel = {
+    x: pointerPixel.x - (event.clientX - rect.left - rect.width / 2),
+    y: pointerPixel.y - (event.clientY - rect.top - rect.height / 2)
+  };
+  const center = tilePixelToLonLat(centerPixel.x, centerPixel.y, nextZoom);
+  state.views.map.zoom = nextZoom;
+  state.views.map.lon = center.x;
+  state.views.map.lat = center.y;
+  render();
 }
 
 function readImage(space, file) {
@@ -524,24 +790,32 @@ function readImage(space, file) {
 
 function exportData() {
   const data = {
-    version: 3,
+    version: 4,
     createdAt: new Date().toISOString(),
+    coordinateSystem: "WGS84",
+    initialMapCenter: { lon: VWORLD_INITIAL.lon, lat: VWORLD_INITIAL.lat, zoom: VWORLD_INITIAL.zoom },
     edgeLimit: Number(ui.edgeLimit.value),
     angleLimit: Number(ui.angleLimit.value),
-    points: state.points.map(({ id, x, y, mapX, mapY }) => ({ id, cctv: { x, y }, map: hasMapCoord({ mapX, mapY }) ? { x: mapX, y: mapY } : null })),
-    triangles: state.triangles.filter((triangle) => tinStatus(triangle).included).map((triangle) => ({
-      pointIds: triangle.ids,
-      maxEdge: Number(triangle.maxEdge.toFixed(2)),
-      minAngle: Number(triangle.minAngle.toFixed(2)),
-      isBoundary: triangle.isBoundary,
-      mapReady: triangle.vertices.every(hasMapCoord),
-      quality: tinStatus(triangle).valid ? "ok" : "warning"
-    }))
+    points: state.points.map(({ id, x, y, mapX, mapY }) => ({
+      id,
+      cctv: { x, y },
+      map: hasMapCoord({ mapX, mapY }) ? { lon: mapX, lat: mapY } : null
+    })),
+    triangles: state.triangles
+      .filter((triangle) => tinStatus(triangle).included)
+      .map((triangle) => ({
+        pointIds: triangle.ids,
+        maxEdge: Number(triangle.maxEdge.toFixed(2)),
+        minAngle: Number(triangle.minAngle.toFixed(2)),
+        isBoundary: triangle.isBoundary,
+        mapReady: triangle.vertices.every(hasMapCoord),
+        quality: tinStatus(triangle).valid ? "ok" : "warning"
+      }))
   };
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
   const anchor = document.createElement("a");
   anchor.href = URL.createObjectURL(blob);
-  anchor.download = "tin-points.json";
+  anchor.download = "tin-points-wgs84.json";
   anchor.click();
   URL.revokeObjectURL(anchor.href);
 }
@@ -555,12 +829,14 @@ function importData(file) {
       state.points = data.points.map((point, index) => {
         const cctv = point.cctv || point;
         const map = point.map || null;
+        const lon = map ? (map.lon ?? map.x) : point.mapX;
+        const lat = map ? (map.lat ?? map.y) : point.mapY;
         return {
           id: Number(point.id) || index + 1,
           x: Number(cctv.x) || 0,
           y: Number(cctv.y) || 0,
-          mapX: map ? Number(map.x) : (point.mapX !== "" && Number.isFinite(Number(point.mapX)) ? Number(point.mapX) : null),
-          mapY: map ? Number(map.y) : (point.mapY !== "" && Number.isFinite(Number(point.mapY)) ? Number(point.mapY) : null)
+          mapX: lon !== "" && Number.isFinite(Number(lon)) ? Number(lon) : null,
+          mapY: lat !== "" && Number.isFinite(Number(lat)) ? Number(lat) : null
         };
       });
       state.nextId = Math.max(0, ...state.points.map((point) => point.id)) + 1;
@@ -570,7 +846,7 @@ function importData(file) {
       rebuildTin();
       fitBothViews();
     } catch (error) {
-      alert(`JSON을 불러오지 못했습니다: ${error.message}`);
+      alert(`JSON을 불러오지 못했습니다. ${error.message}`);
     }
   };
   reader.readAsText(file);
@@ -583,7 +859,13 @@ for (const space of ["map", "cctv"]) {
   canvases[space].addEventListener("pointerleave", handlePointerUp);
 }
 
-window.addEventListener("resize", () => { resizeCanvases(); fitBothViews(); });
+canvases.map.addEventListener("wheel", handleMapWheel, { passive: false });
+
+window.addEventListener("resize", () => {
+  resizeCanvases();
+  fitBothViews();
+});
+
 window.addEventListener("keydown", (event) => {
   const tag = document.activeElement?.tagName;
   if ((event.key === "Delete" || event.key === "Backspace") && tag !== "INPUT" && tag !== "TEXTAREA") removeSelectedPoint();
@@ -603,10 +885,24 @@ ui.clearBtn.addEventListener("click", () => {
   rebuildTin();
 });
 ui.exportBtn.addEventListener("click", exportData);
-ui.mapImageInput.addEventListener("change", (event) => { const [file] = event.target.files; if (file) readImage("map", file); });
-ui.cctvImageInput.addEventListener("change", (event) => { const [file] = event.target.files; if (file) readImage("cctv", file); });
-ui.jsonInput.addEventListener("change", (event) => { const [file] = event.target.files; if (file) importData(file); });
-[ui.showImage, ui.showGrid, ui.showLabels, ui.hideExcludedTin, ui.edgeLimit, ui.angleLimit, ui.warningOpacity].forEach((control) => control.addEventListener("input", () => { updateUi(); render(); }));
+
+ui.cctvImageInput.addEventListener("change", (event) => {
+  const [file] = event.target.files;
+  if (file) readImage("cctv", file);
+});
+
+ui.jsonInput.addEventListener("change", (event) => {
+  const [file] = event.target.files;
+  if (file) importData(file);
+});
+
+[ui.showImage, ui.showGrid, ui.showLabels, ui.hideExcludedTin, ui.edgeLimit, ui.angleLimit, ui.warningOpacity].forEach((control) => {
+  control.addEventListener("input", () => {
+    updateUi();
+    render();
+  });
+});
+
 ui.cctvX.addEventListener("change", () => updateSelectedPoint({ x: Number(ui.cctvX.value) || 0 }));
 ui.cctvY.addEventListener("change", () => updateSelectedPoint({ y: Number(ui.cctvY.value) || 0 }));
 ui.mapX.addEventListener("change", () => updateSelectedPoint({ mapX: ui.mapX.value === "" ? null : Number(ui.mapX.value) }));
