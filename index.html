@@ -49,7 +49,7 @@
           <input id="longEdgeOpacity" type="range" min="0" max="100" value="45" step="5">
         </label>
         <div class="toggle-row">
-          <label><input id="hideLongTin" type="checkbox" checked> 제외 TIN 숨김</label>
+          <label><input id="hideLongTin" type="checkbox" checked> 외곽 제외 TIN 숨김</label>
           <label><input id="showLabels" type="checkbox" checked> 번호</label>
         </div>
       </section>
@@ -71,9 +71,14 @@
         <dl>
           <div><dt>포인트</dt><dd id="pointCount">0</dd></div>
           <div><dt>TIN</dt><dd id="tinCount">0</dd></div>
-          <div><dt>긴 변 제외</dt><dd id="filteredCount">0</dd></div>
-          <div><dt>낮은 예각 제외</dt><dd id="angleFilteredCount">0</dd></div>
+          <div><dt>외곽 제외</dt><dd id="filteredCount">0</dd></div>
+          <div><dt>내부 경고</dt><dd id="angleFilteredCount">0</dd></div>
         </dl>
+      </section>
+
+      <section class="panel advice">
+        <h2>개선 권장</h2>
+        <div id="qualityAdvice" class="muted">내부 품질 경고가 있으면 후보 포인트가 표시됩니다.</div>
       </section>
 
       <section class="panel actions">
@@ -98,5 +103,6 @@
   </main>
 
   <script src="app.js"></script>
+  <script src="quality.js"></script>
 </body>
 </html>
