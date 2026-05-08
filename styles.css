@@ -6,10 +6,10 @@
   --muted: #657184;
   --line: #d6dce5;
   --accent: #0f7c80;
-  --accent-2: #cc5b33;
-  --tin: #0e7490;
   --warn: #ca6b20;
   --danger: #b42318;
+  --map: #2563eb;
+  --cctv: #0f766e;
   --shadow: 0 12px 30px rgba(20, 31, 45, 0.12);
 }
 
@@ -103,6 +103,10 @@ button.full {
   background: #f6f8fb;
   color: var(--ink);
   cursor: pointer;
+}
+
+.file-drop + .file-drop {
+  margin-top: 8px;
 }
 
 .file-drop input,
@@ -219,27 +223,20 @@ dd {
   font-weight: 720;
 }
 
-.actions {
-  margin-bottom: 2px;
-}
-
 .actions .file-import {
   margin-top: 10px;
 }
 
 .workspace {
   position: relative;
+  min-width: 0;
   overflow: hidden;
-  background:
-    linear-gradient(90deg, rgba(24, 33, 44, 0.05) 1px, transparent 1px),
-    linear-gradient(rgba(24, 33, 44, 0.05) 1px, transparent 1px),
-    #e9edf2;
-  background-size: 40px 40px;
+  background: #e9edf2;
 }
 
 .toolbar {
   position: absolute;
-  z-index: 2;
+  z-index: 3;
   top: 16px;
   left: 16px;
   display: flex;
@@ -277,32 +274,63 @@ dd {
   white-space: nowrap;
 }
 
-#tinCanvas {
+.split-view {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  height: 100vh;
+  min-width: 0;
+}
+
+.pane {
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+  background:
+    linear-gradient(90deg, rgba(24, 33, 44, 0.05) 1px, transparent 1px),
+    linear-gradient(rgba(24, 33, 44, 0.05) 1px, transparent 1px),
+    #e9edf2;
+  background-size: 40px 40px;
+}
+
+.map-pane {
+  border-right: 1px solid #cbd5e1;
+}
+
+.pane-title {
+  position: absolute;
+  z-index: 2;
+  right: 14px;
+  top: 14px;
+  padding: 6px 10px;
+  border: 1px solid rgba(214, 220, 229, 0.85);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.9);
+  color: #334155;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+canvas {
   display: block;
   width: 100%;
-  height: 100vh;
+  height: 100%;
   cursor: crosshair;
 }
 
-@media (max-width: 860px) {
+@media (max-width: 980px) {
   .app-shell {
     grid-template-columns: 1fr;
-    grid-template-rows: auto minmax(520px, 1fr);
+    grid-template-rows: auto minmax(620px, 1fr);
   }
 
   .sidebar {
-    max-height: 45vh;
+    max-height: 42vh;
     border-right: 0;
     border-bottom: 1px solid var(--line);
   }
 
-  #tinCanvas {
-    height: 55vh;
-  }
-
-  .toolbar {
-    top: 10px;
-    left: 10px;
+  .split-view {
+    height: 58vh;
   }
 
   .hint {
