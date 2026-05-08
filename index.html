@@ -12,7 +12,7 @@
       <header class="brand">
         <div>
           <h1>TIN Maker</h1>
-          <p>CCTV 이미지와 지도 좌표를 같은 TIN 포인트로 매칭합니다.</p>
+          <p>CCTV 이미지와 지도 좌표를 같은 TIN 라인으로 매칭합니다.</p>
         </div>
         <button id="clearBtn" class="icon-btn danger" title="전체 초기화" aria-label="전체 초기화">
           <span aria-hidden="true">×</span>
@@ -22,15 +22,11 @@
       <section class="panel">
         <h2>배경</h2>
         <label class="file-drop">
-          <input id="mapImageInput" type="file" accept="image/*">
-          <span>지도 이미지 불러오기</span>
-        </label>
-        <label class="file-drop">
           <input id="cctvImageInput" type="file" accept="image/*">
           <span>CCTV 이미지 불러오기</span>
         </label>
         <div class="toggle-row">
-          <label><input id="showImage" type="checkbox" checked> 이미지</label>
+          <label><input id="showImage" type="checkbox" checked> CCTV 이미지</label>
           <label><input id="showGrid" type="checkbox" checked> 격자</label>
           <label><input id="showLabels" type="checkbox" checked> 번호</label>
         </div>
@@ -60,12 +56,12 @@
 
       <section class="panel selected-panel">
         <h2>선택 포인트</h2>
-        <div id="emptySelection" class="muted">오른쪽 CCTV에 포인트를 찍은 뒤 왼쪽 지도에 대응 포인트를 찍으세요.</div>
+        <div id="emptySelection" class="muted">오른쪽 CCTV에 포인트를 찍은 뒤 왼쪽 지도에서 같은 위치를 찍어 쌍으로 매칭하세요.</div>
         <div id="pointEditor" class="point-editor hidden">
           <label>CCTV X <input id="cctvX" type="number" step="0.1"></label>
           <label>CCTV Y <input id="cctvY" type="number" step="0.1"></label>
-          <label>지도 X <input id="mapX" type="number" step="0.1" placeholder="지도에서 클릭"></label>
-          <label>지도 Y <input id="mapY" type="number" step="0.1" placeholder="지도에서 클릭"></label>
+          <label>경도 <input id="mapX" type="number" step="0.000001" placeholder="지도에서 클릭"></label>
+          <label>위도 <input id="mapY" type="number" step="0.000001" placeholder="지도에서 클릭"></label>
           <button id="deletePointBtn" class="full danger">선택 포인트 삭제</button>
         </div>
       </section>
@@ -100,13 +96,13 @@
       <div class="toolbar">
         <button id="addModeBtn" class="mode active" data-mode="add" title="CCTV 포인트 추가">＋</button>
         <button id="selectModeBtn" class="mode" data-mode="select" title="선택/이동">↕</button>
-        <button id="fitBtn" class="mode" title="양쪽 화면 맞춤">⌂</button>
-        <div class="hint">오른쪽: CCTV 포인트/TIN · 왼쪽: 선택 포인트의 지도 위치 매칭</div>
+        <button id="fitBtn" class="mode" title="화면 맞춤">⌂</button>
+        <div class="hint">왼쪽: 브이월드 지도(WGS84) · 오른쪽: CCTV 포인트/TIN · 지도 클릭: 선택 포인트 매칭</div>
       </div>
 
       <section class="split-view">
         <div class="pane map-pane">
-          <div class="pane-title">지도</div>
+          <div class="pane-title">지도 WGS84</div>
           <canvas id="mapCanvas" width="900" height="900" aria-label="지도 포인트 매칭 캔버스"></canvas>
         </div>
         <div class="pane cctv-pane">
