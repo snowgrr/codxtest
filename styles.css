@@ -256,6 +256,25 @@ dd {
   font-size: 12px;
 }
 
+.test-result .risk {
+  display: block;
+  margin-top: 6px;
+  font-weight: 700;
+}
+
+.test-result .risk.good {
+  color: #0f766e;
+}
+
+.test-result .risk.medium {
+  color: #946200;
+}
+
+.test-result .risk.low,
+.test-result .risk.critical {
+  color: var(--danger);
+}
+
 .workspace {
   position: relative;
   min-width: 0;
@@ -362,7 +381,8 @@ canvas {
 }
 
 .map-type-controls,
-.map-rotate-controls {
+.map-rotate-controls,
+.roadview-controls {
   display: flex;
   gap: 6px;
   padding: 6px;
@@ -391,6 +411,48 @@ canvas {
   border-color: var(--map);
   background: linear-gradient(#eaf1ff, #dbeafe);
   color: #1d4ed8;
+}
+
+.roadview-controls input {
+  width: 118px;
+  min-height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 0 9px;
+  color: var(--ink);
+}
+
+.roadview-panel {
+  position: absolute;
+  z-index: 3;
+  right: 14px;
+  bottom: 14px;
+  width: min(420px, calc(100% - 28px));
+  height: min(320px, calc(100% - 92px));
+  border: 1px solid rgba(214, 220, 229, 0.95);
+  border-radius: 8px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: var(--shadow);
+}
+
+.roadview-status {
+  position: absolute;
+  z-index: 2;
+  left: 8px;
+  right: 8px;
+  top: 8px;
+  padding: 6px 8px;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.92);
+  color: #334155;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.roadview {
+  width: 100%;
+  height: 100%;
 }
 
 #mapCanvas {
