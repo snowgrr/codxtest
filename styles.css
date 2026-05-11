@@ -382,6 +382,7 @@ canvas {
 
 .map-type-controls,
 .map-rotate-controls,
+.map-key-controls,
 .roadview-controls {
   display: flex;
   gap: 6px;
@@ -413,6 +414,7 @@ canvas {
   color: #1d4ed8;
 }
 
+.map-key-controls input,
 .roadview-controls input {
   width: 118px;
   min-height: 34px;
