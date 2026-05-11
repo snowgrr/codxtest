@@ -28,7 +28,6 @@
         </label>
         <div class="toggle-row">
           <label><input id="showImage" type="checkbox" checked> CCTV 이미지</label>
-          <label><input id="showGrid" type="checkbox" checked> 격자</label>
           <label><input id="showLabels" type="checkbox" checked> 번호</label>
         </div>
       </section>
@@ -52,6 +51,7 @@
         </label>
         <div class="toggle-row">
           <label><input id="hideExcludedTin" type="checkbox" checked> 외곽 제외 숨김</label>
+          <label><input id="useSensitivity" type="checkbox" checked> 좌표 민감도 반영</label>
         </div>
       </section>
 
@@ -80,6 +80,7 @@
           <div><dt>유효 TIN</dt><dd id="tinCount">0</dd></div>
           <div><dt>외곽 제외</dt><dd id="excludedCount">0</dd></div>
           <div><dt>내부 경고</dt><dd id="warningCount">0</dd></div>
+          <div><dt>좌표 민감 TIN</dt><dd id="sensitivityCount">0</dd></div>
         </dl>
       </section>
 
@@ -125,8 +126,17 @@
               <button id="rotateResetBtn" class="map-image-btn wide" type="button" title="회전 초기화">0°</button>
               <button id="rotateRightBtn" class="map-image-btn" type="button" title="오른쪽 회전">↷</button>
             </div>
+            <div class="roadview-controls" role="group" aria-label="카카오 로드뷰">
+              <input id="kakaoKeyInput" type="password" autocomplete="off" placeholder="Kakao JS 키">
+              <button id="roadviewToggleBtn" class="map-image-btn wide" type="button" title="카카오 로드뷰 켜기/끄기">RV</button>
+              <button id="roadviewRefreshBtn" class="map-image-btn" type="button" title="로드뷰 위치 갱신">⌖</button>
+            </div>
           </div>
           <div id="olMap" class="ol-map" aria-label="브이월드 지도"></div>
+          <div id="roadviewPanel" class="roadview-panel hidden">
+            <div id="roadviewStatus" class="roadview-status">Kakao JavaScript 키를 입력한 뒤 RV를 켜세요.</div>
+            <div id="roadview" class="roadview"></div>
+          </div>
           <canvas id="mapCanvas" width="900" height="900" aria-label="지도 포인트 매칭 캔버스"></canvas>
         </div>
       </section>
