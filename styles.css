@@ -19,7 +19,9 @@
 
 body {
   margin: 0;
+  height: 100vh;
   min-height: 100vh;
+  overflow: hidden;
   color: var(--ink);
   background: var(--bg);
   font: 14px/1.45 "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
@@ -33,7 +35,9 @@ input {
 .app-shell {
   display: grid;
   grid-template-columns: 340px minmax(0, 1fr);
-  min-height: 100vh;
+  height: 100vh;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .sidebar {
@@ -43,7 +47,9 @@ input {
   padding: 16px;
   border-right: 1px solid var(--line);
   background: #f8fafc;
-  overflow: auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .brand {
@@ -132,28 +138,6 @@ button:hover {
   align-items: center;
   gap: 7px;
   color: #334155;
-}
-
-.segmented {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 6px;
-}
-
-.segment {
-  min-height: 36px;
-  border: 1px solid var(--line);
-  border-radius: 7px;
-  background: #f6f8fb;
-  color: #334155;
-  cursor: pointer;
-}
-
-.segment.active {
-  border-color: var(--map);
-  background: #eaf1ff;
-  color: #1d4ed8;
-  font-weight: 720;
 }
 
 .range-row {
@@ -249,6 +233,29 @@ dd {
   margin-top: 10px;
 }
 
+.actions button + button {
+  margin-top: 10px;
+}
+
+.test-result {
+  min-height: 54px;
+  word-break: keep-all;
+}
+
+.test-result strong {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--ink);
+}
+
+.test-result code {
+  display: block;
+  margin-top: 4px;
+  color: #1d4ed8;
+  font-family: Consolas, "Segoe UI Mono", monospace;
+  font-size: 12px;
+}
+
 .workspace {
   position: relative;
   min-width: 0;
@@ -342,6 +349,48 @@ canvas {
 .ol-map {
   position: absolute;
   inset: 0;
+}
+
+.map-float-controls {
+  position: absolute;
+  z-index: 4;
+  left: 14px;
+  bottom: 14px;
+  display: grid;
+  gap: 8px;
+  pointer-events: auto;
+}
+
+.map-type-controls,
+.map-rotate-controls {
+  display: flex;
+  gap: 6px;
+  padding: 6px;
+  border: 1px solid rgba(214, 220, 229, 0.88);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 8px 18px rgba(20, 31, 45, 0.16);
+}
+
+.map-image-btn {
+  min-width: 42px;
+  min-height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: linear-gradient(#ffffff, #eef2f7);
+  color: #1e293b;
+  cursor: pointer;
+  font-weight: 720;
+}
+
+.map-image-btn.wide {
+  min-width: 48px;
+}
+
+.map-image-btn.active {
+  border-color: var(--map);
+  background: linear-gradient(#eaf1ff, #dbeafe);
+  color: #1d4ed8;
 }
 
 #mapCanvas {
