@@ -34,14 +34,6 @@
       </section>
 
       <section class="panel">
-        <h2>지도 선택</h2>
-        <div class="segmented" role="group" aria-label="지도 종류">
-          <button id="baseMapBtn" class="segment active" type="button" data-map-type="base">일반지도</button>
-          <button id="satelliteMapBtn" class="segment" type="button" data-map-type="satellite">영상지도</button>
-        </div>
-      </section>
-
-      <section class="panel">
         <h2>TIN 제어</h2>
         <label class="range-row">
           <span>최대 변 길이</span>
@@ -75,6 +67,11 @@
         </div>
       </section>
 
+      <section class="panel test-panel">
+        <h2>좌표 추출 테스트</h2>
+        <div id="testResult" class="test-result muted">테스트 모드에서 CCTV TIN 내부를 클릭하면 지도 좌표가 표시됩니다.</div>
+      </section>
+
       <section class="panel stats">
         <h2>상태</h2>
         <dl>
@@ -93,6 +90,7 @@
 
       <section class="panel actions">
         <h2>데이터</h2>
+        <button id="clearPointsBtn" class="full danger">포인트 전체 초기화</button>
         <button id="exportBtn" class="full">JSON 내보내기</button>
         <label class="file-import">
           <input id="jsonInput" type="file" accept="application/json,.json">
@@ -105,8 +103,9 @@
       <div class="toolbar">
         <button id="addModeBtn" class="mode active" data-mode="add" title="CCTV 포인트 추가">＋</button>
         <button id="selectModeBtn" class="mode" data-mode="select" title="선택/이동">↕</button>
+        <button id="testModeBtn" class="mode" data-mode="test" title="좌표 추출 테스트">◎</button>
         <button id="fitBtn" class="mode" title="화면 맞춤">⌂</button>
-        <div class="hint">왼쪽: CCTV 포인트/TIN · 오른쪽: 브이월드 지도(WGS84) · 지도 클릭: 선택 포인트 매칭</div>
+        <div class="hint">왼쪽: CCTV 포인트/TIN · 오른쪽: 브이월드 지도(WGS84) · ◎: CCTV 내부점 지도 좌표 테스트</div>
       </div>
 
       <section class="split-view">
@@ -116,6 +115,17 @@
         </div>
         <div class="pane map-pane">
           <div class="pane-title">지도 WGS84</div>
+          <div class="map-float-controls" aria-label="지도 조작">
+            <div class="map-type-controls" role="group" aria-label="지도 종류">
+              <button id="baseMapBtn" class="map-image-btn active" type="button" data-map-type="base" title="일반지도">일반</button>
+              <button id="satelliteMapBtn" class="map-image-btn" type="button" data-map-type="satellite" title="영상지도">영상</button>
+            </div>
+            <div class="map-rotate-controls" role="group" aria-label="지도 회전">
+              <button id="rotateLeftBtn" class="map-image-btn" type="button" title="왼쪽 회전">↶</button>
+              <button id="rotateResetBtn" class="map-image-btn wide" type="button" title="회전 초기화">0°</button>
+              <button id="rotateRightBtn" class="map-image-btn" type="button" title="오른쪽 회전">↷</button>
+            </div>
+          </div>
           <div id="olMap" class="ol-map" aria-label="브이월드 지도"></div>
           <canvas id="mapCanvas" width="900" height="900" aria-label="지도 포인트 매칭 캔버스"></canvas>
         </div>
