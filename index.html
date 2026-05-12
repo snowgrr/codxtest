@@ -156,7 +156,7 @@
           </div>
 
           <div id="mapTools" class="map-float-controls collapsed" aria-label="지도 조작">
-            <button id="mapToolsToggle" class="map-tools-toggle" type="button" aria-expanded="false" title="지도 도구 표시/숨김">도구</button>
+            <button id="mapToolsToggle" class="map-tools-toggle" type="button" aria-expanded="false" title="지도 도구 표시/숨김">키/도구</button>
             <div class="map-type-controls map-tool-group" role="group" aria-label="지도 종류">
               <button id="baseMapBtn" class="map-image-btn active" type="button" data-map-type="base" title="일반지도">일반</button>
               <button id="satelliteMapBtn" class="map-image-btn" type="button" data-map-type="satellite" title="영상지도">영상</button>
@@ -170,12 +170,18 @@
               <button id="rotateRightBtn" class="map-image-btn" type="button" title="오른쪽 0.5도 회전">↻</button>
               <button id="rotateResetBtn" class="map-image-btn wide" type="button" title="회전 초기화">0°</button>
             </div>
-            <div class="map-key-controls map-tool-group" role="group" aria-label="브이월드 지도 키">
-              <input id="vworldKeyInput" type="password" autocomplete="off" placeholder="VWorld Key">
-              <button id="vworldApplyBtn" class="map-image-btn wide" type="button" title="브이월드 키 적용">적용</button>
+            <div class="map-key-controls map-tool-group key-input-group" role="group" aria-label="브이월드 지도 키">
+              <label class="tool-key-field">
+                <span>브이월드 인증키</span>
+                <input id="vworldKeyInput" type="password" autocomplete="off" placeholder="VWorld API Key">
+              </label>
+              <button id="vworldApplyBtn" class="map-image-btn wide" type="button" title="브이월드 키 적용">지도 적용</button>
             </div>
-            <div class="roadview-controls map-tool-group" role="group" aria-label="카카오 로드뷰">
-              <input id="kakaoKeyInput" type="password" autocomplete="off" placeholder="Kakao JS Key">
+            <div class="roadview-controls map-tool-group key-input-group" role="group" aria-label="카카오 로드뷰">
+              <label class="tool-key-field">
+                <span>카카오 JavaScript 키</span>
+                <input id="kakaoKeyInput" type="password" autocomplete="off" placeholder="Kakao JavaScript Key">
+              </label>
               <button id="roadviewToggleBtn" class="map-image-btn wide" type="button" title="카카오 로드뷰 켜기/끄기">RV</button>
               <button id="roadviewRefreshBtn" class="map-image-btn" type="button" title="로드뷰 위치 갱신">⟳</button>
             </div>
