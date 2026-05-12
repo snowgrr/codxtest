@@ -1,4 +1,10 @@
 (function () {
+  if (!document.querySelector('script[src="sample-cctv-default.js"]')) {
+    const sampleScript = document.createElement("script");
+    sampleScript.src = "sample-cctv-default.js";
+    document.head.appendChild(sampleScript);
+  }
+
   if (typeof ol === "undefined" || typeof vworldKey !== "function") return;
 
   mapSource = function (type) {
